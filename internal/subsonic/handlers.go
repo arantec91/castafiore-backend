@@ -980,9 +980,8 @@ func (s *Service) GetNowPlaying(c *gin.Context) {
 
 // GetStarred - Returns starred songs, albums and artists (old format)
 func (s *Service) GetStarred(c *gin.Context) {
-	// Get user from context (would be set by auth middleware)
-	// For now, use a default user ID
-	userId := 1 // TODO: Get from authenticated user context
+	// Get user ID from context (with fallback to user 1 for now)
+	userId := s.getUserID(c)
 
 	result := &Starred{
 		Artist: []Artist{},
@@ -991,6 +990,7 @@ func (s *Service) GetStarred(c *gin.Context) {
 	}
 
 	// Get starred artists
+	log.Printf("GetStarred: Fetching starred artists for user %d", userId)
 	artistRows, err := s.db.Query(`
 		SELECT a.id, a.name
 		FROM starred_artists sa
@@ -999,19 +999,25 @@ func (s *Service) GetStarred(c *gin.Context) {
 		ORDER BY sa.starred_at DESC
 	`, userId)
 
-	if err == nil {
+	if err != nil {
+		log.Printf("Error fetching starred artists: %v", err)
+	} else {
 		defer artistRows.Close()
 		for artistRows.Next() {
 			var artist Artist
 			if err := artistRows.Scan(&artist.ID, &artist.Name); err == nil {
 				result.Artist = append(result.Artist, artist)
+			} else {
+				log.Printf("Error scanning starred artist: %v", err)
 			}
 		}
 	}
 
 	// Get starred albums (as Child objects)
+	log.Printf("GetStarred: Fetching starred albums for user %d", userId)
 	albumRows, err := s.db.Query(`
-		SELECT al.id, al.name, ar.id as artist_id, ar.name as artist_name, al.year, al.genre, al.cover_art_path
+		SELECT al.id, al.name, ar.id as artist_id, ar.name as artist_name, 
+		       al.year, al.genre, al.cover_art_path
 		FROM starred_albums sa
 		JOIN albums al ON sa.album_id = al.id
 		JOIN artists ar ON al.artist_id = ar.id
@@ -1019,7 +1025,9 @@ func (s *Service) GetStarred(c *gin.Context) {
 		ORDER BY sa.starred_at DESC
 	`, userId)
 
-	if err == nil {
+	if err != nil {
+		log.Printf("Error fetching starred albums: %v", err)
+	} else {
 		defer albumRows.Close()
 		for albumRows.Next() {
 			var album Child
@@ -1047,13 +1055,14 @@ func (s *Service) GetStarred(c *gin.Context) {
 				log.Printf("DEBUG: Adding starred album - ID: %s, AlbumId: %s, Title: %s, Album: %s, Artist: %s, Parent: %s, IsDir: %t",
 					album.ID, album.AlbumId, album.Title, album.Album, album.Artist, album.Parent, album.IsDir)
 				result.Album = append(result.Album, album)
+			} else {
+				log.Printf("Error scanning starred album: %v", err)
 			}
 		}
-	} else {
-		log.Printf("Error getting starred albums: %v", err)
 	}
 
 	// Get starred songs
+	log.Printf("GetStarred: Fetching starred songs for user %d", userId)
 	songRows, err := s.db.Query(`
 		SELECT s.id, s.title, s.track_number, s.duration, s.file_path, 
 		       s.file_size, s.bitrate, s.format, s.album_id,
@@ -1066,20 +1075,22 @@ func (s *Service) GetStarred(c *gin.Context) {
 		ORDER BY ss.starred_at DESC
 	`, userId)
 
-	if err == nil {
+	if err != nil {
+		log.Printf("Error fetching starred songs: %v", err)
+	} else {
 		defer songRows.Close()
 		result.Song = s.scanSongs(songRows)
 	}
 
-	log.Printf("GetStarred: Returning %d artists, %d albums, %d songs", len(result.Artist), len(result.Album), len(result.Song))
+	log.Printf("GetStarred: Returning %d artists, %d albums, %d songs for user %d",
+		len(result.Artist), len(result.Album), len(result.Song), userId)
 	s.sendResponse(c, result)
 }
 
 // GetStarred2 - Returns starred songs, albums and artists (ID3 format)
 func (s *Service) GetStarred2(c *gin.Context) {
-	// Get user from context (would be set by auth middleware)
-	// For now, use a default user ID
-	userId := 1 // TODO: Get from authenticated user context
+	// Get user ID from context (with fallback to user 1 for now)
+	userId := s.getUserID(c)
 
 	result := &Starred2{
 		Artist: []ArtistID3{},
@@ -1087,7 +1098,8 @@ func (s *Service) GetStarred2(c *gin.Context) {
 		Song:   []Child{},
 	}
 
-	// Get starred artists
+	// Get starred artists (ID3 format)
+	log.Printf("GetStarred2: Fetching starred artists for user %d", userId)
 	artistRows, err := s.db.Query(`
 		SELECT a.id, a.name, COUNT(al.id) as album_count, a.cover_art_path
 		FROM starred_artists sa
@@ -1098,7 +1110,9 @@ func (s *Service) GetStarred2(c *gin.Context) {
 		ORDER BY sa.starred_at DESC
 	`, userId)
 
-	if err == nil {
+	if err != nil {
+		log.Printf("Error fetching starred artists for ID3: %v", err)
+	} else {
 		defer artistRows.Close()
 		for artistRows.Next() {
 			var artist ArtistID3
@@ -1108,11 +1122,14 @@ func (s *Service) GetStarred2(c *gin.Context) {
 					artist.CoverArt = artist.ID
 				}
 				result.Artist = append(result.Artist, artist)
+			} else {
+				log.Printf("Error scanning starred artist ID3: %v", err)
 			}
 		}
 	}
 
-	// Get starred albums
+	// Get starred albums (ID3 format)
+	log.Printf("GetStarred2: Fetching starred albums for user %d", userId)
 	albumRows, err := s.db.Query(`
 		SELECT al.id, al.name, al.artist_id, ar.name as artist_name, 
 		       al.year, al.genre, al.created_at, al.cover_art_path,
@@ -1126,7 +1143,9 @@ func (s *Service) GetStarred2(c *gin.Context) {
 		ORDER BY sa.starred_at DESC
 	`, userId)
 
-	if err == nil {
+	if err != nil {
+		log.Printf("Error fetching starred albums for ID3: %v", err)
+	} else {
 		defer albumRows.Close()
 		for albumRows.Next() {
 			var album AlbumID3
@@ -1148,11 +1167,14 @@ func (s *Service) GetStarred2(c *gin.Context) {
 					album.CoverArt = album.ID
 				}
 				result.Album = append(result.Album, album)
+			} else {
+				log.Printf("Error scanning starred album ID3: %v", err)
 			}
 		}
 	}
 
 	// Get starred songs
+	log.Printf("GetStarred2: Fetching starred songs for user %d", userId)
 	songRows, err := s.db.Query(`
 		SELECT s.id, s.title, s.track_number, s.duration, s.file_path, 
 		       s.file_size, s.bitrate, s.format, s.album_id,
@@ -1165,11 +1187,15 @@ func (s *Service) GetStarred2(c *gin.Context) {
 		ORDER BY ss.starred_at DESC
 	`, userId)
 
-	if err == nil {
+	if err != nil {
+		log.Printf("Error fetching starred songs for ID3: %v", err)
+	} else {
 		defer songRows.Close()
 		result.Song = s.scanSongs(songRows)
 	}
 
+	log.Printf("GetStarred2: Returning %d artists, %d albums, %d songs for user %d",
+		len(result.Artist), len(result.Album), len(result.Song), userId)
 	s.sendResponse(c, result)
 }
 
@@ -1809,114 +1835,205 @@ func (s *Service) ChangePassword(c *gin.Context) { s.sendResponse(c, nil) }
 
 // Star - Attaches a star to a song, album or artist
 func (s *Service) Star(c *gin.Context) {
-	// Get user from context
-	userId := 1 // TODO: Get from authenticated user context
+	// Get user ID from context (with fallback to user 1 for now)
+	userId := s.getUserID(c)
 
 	// Get IDs to star
 	songIds := c.QueryArray("id")
 	albumIds := c.QueryArray("albumId")
 	artistIds := c.QueryArray("artistId")
 
+	var errors []string
+
 	// Star songs
 	for _, songId := range songIds {
-		if s.isValidID(songId) {
-			_, err := s.db.Exec(`
-				INSERT INTO starred_songs (user_id, song_id, starred_at)
-				VALUES ($1, $2, NOW())
-				ON CONFLICT (user_id, song_id) DO NOTHING
-			`, userId, songId)
+		if !s.isValidID(songId) {
+			log.Printf("Invalid song ID provided: %s", songId)
+			continue
+		}
 
-			if err != nil {
-				log.Printf("Error starring song %s: %v", songId, err)
-			}
+		// Check if song exists
+		var exists bool
+		err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM songs WHERE id = $1)", songId).Scan(&exists)
+		if err != nil || !exists {
+			log.Printf("Song with ID %s does not exist", songId)
+			errors = append(errors, fmt.Sprintf("Song %s not found", songId))
+			continue
+		}
+
+		_, err = s.db.Exec(`
+			INSERT INTO starred_songs (user_id, song_id, starred_at)
+			VALUES ($1, $2, NOW())
+			ON CONFLICT (user_id, song_id) DO NOTHING
+		`, userId, songId)
+
+		if err != nil {
+			log.Printf("Error starring song %s: %v", songId, err)
+			errors = append(errors, fmt.Sprintf("Failed to star song %s", songId))
+		} else {
+			log.Printf("Successfully starred song %s for user %d", songId, userId)
 		}
 	}
 
 	// Star albums
 	for _, albumId := range albumIds {
-		if s.isValidID(albumId) {
-			_, err := s.db.Exec(`
-				INSERT INTO starred_albums (user_id, album_id, starred_at)
-				VALUES ($1, $2, NOW())
-				ON CONFLICT (user_id, album_id) DO NOTHING
-			`, userId, albumId)
+		if !s.isValidID(albumId) {
+			log.Printf("Invalid album ID provided: %s", albumId)
+			continue
+		}
 
-			if err != nil {
-				log.Printf("Error starring album %s: %v", albumId, err)
-			}
+		// Check if album exists
+		var exists bool
+		err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM albums WHERE id = $1)", albumId).Scan(&exists)
+		if err != nil || !exists {
+			log.Printf("Album with ID %s does not exist", albumId)
+			errors = append(errors, fmt.Sprintf("Album %s not found", albumId))
+			continue
+		}
+
+		_, err = s.db.Exec(`
+			INSERT INTO starred_albums (user_id, album_id, starred_at)
+			VALUES ($1, $2, NOW())
+			ON CONFLICT (user_id, album_id) DO NOTHING
+		`, userId, albumId)
+
+		if err != nil {
+			log.Printf("Error starring album %s: %v", albumId, err)
+			errors = append(errors, fmt.Sprintf("Failed to star album %s", albumId))
+		} else {
+			log.Printf("Successfully starred album %s for user %d", albumId, userId)
 		}
 	}
 
 	// Star artists
 	for _, artistId := range artistIds {
-		if s.isValidID(artistId) {
-			_, err := s.db.Exec(`
-				INSERT INTO starred_artists (user_id, artist_id, starred_at)
-				VALUES ($1, $2, NOW())
-				ON CONFLICT (user_id, artist_id) DO NOTHING
-			`, userId, artistId)
+		if !s.isValidID(artistId) {
+			log.Printf("Invalid artist ID provided: %s", artistId)
+			continue
+		}
 
-			if err != nil {
-				log.Printf("Error starring artist %s: %v", artistId, err)
-			}
+		// Check if artist exists
+		var exists bool
+		err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM artists WHERE id = $1)", artistId).Scan(&exists)
+		if err != nil || !exists {
+			log.Printf("Artist with ID %s does not exist", artistId)
+			errors = append(errors, fmt.Sprintf("Artist %s not found", artistId))
+			continue
+		}
+
+		_, err = s.db.Exec(`
+			INSERT INTO starred_artists (user_id, artist_id, starred_at)
+			VALUES ($1, $2, NOW())
+			ON CONFLICT (user_id, artist_id) DO NOTHING
+		`, userId, artistId)
+
+		if err != nil {
+			log.Printf("Error starring artist %s: %v", artistId, err)
+			errors = append(errors, fmt.Sprintf("Failed to star artist %s", artistId))
+		} else {
+			log.Printf("Successfully starred artist %s for user %d", artistId, userId)
 		}
 	}
 
+	// If there were critical errors, send an error response
+	if len(errors) > 0 {
+		log.Printf("Star operation completed with %d errors", len(errors))
+	}
+
+	// Send successful response (Subsonic API doesn't send error details for star operations)
 	s.sendResponse(c, nil)
 }
 
 // Unstar - Removes the star from a song, album or artist
 func (s *Service) Unstar(c *gin.Context) {
-	// Get user from context
-	userId := 1 // TODO: Get from authenticated user context
+	// Get user ID from context (with fallback to user 1 for now)
+	userId := s.getUserID(c)
 
 	// Get IDs to unstar
 	songIds := c.QueryArray("id")
 	albumIds := c.QueryArray("albumId")
 	artistIds := c.QueryArray("artistId")
 
+	var errors []string
+
 	// Unstar songs
 	for _, songId := range songIds {
-		if s.isValidID(songId) {
-			_, err := s.db.Exec(`
-				DELETE FROM starred_songs
-				WHERE user_id = $1 AND song_id = $2
-			`, userId, songId)
+		if !s.isValidID(songId) {
+			log.Printf("Invalid song ID provided: %s", songId)
+			continue
+		}
 
-			if err != nil {
-				log.Printf("Error unstarring song %s: %v", songId, err)
+		result, err := s.db.Exec(`
+			DELETE FROM starred_songs
+			WHERE user_id = $1 AND song_id = $2
+		`, userId, songId)
+
+		if err != nil {
+			log.Printf("Error unstarring song %s: %v", songId, err)
+			errors = append(errors, fmt.Sprintf("Failed to unstar song %s", songId))
+		} else {
+			if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
+				log.Printf("Successfully unstarred song %s for user %d", songId, userId)
+			} else {
+				log.Printf("Song %s was not starred by user %d", songId, userId)
 			}
 		}
 	}
 
 	// Unstar albums
 	for _, albumId := range albumIds {
-		if s.isValidID(albumId) {
-			_, err := s.db.Exec(`
-				DELETE FROM starred_albums
-				WHERE user_id = $1 AND album_id = $2
-			`, userId, albumId)
+		if !s.isValidID(albumId) {
+			log.Printf("Invalid album ID provided: %s", albumId)
+			continue
+		}
 
-			if err != nil {
-				log.Printf("Error unstarring album %s: %v", albumId, err)
+		result, err := s.db.Exec(`
+			DELETE FROM starred_albums
+			WHERE user_id = $1 AND album_id = $2
+		`, userId, albumId)
+
+		if err != nil {
+			log.Printf("Error unstarring album %s: %v", albumId, err)
+			errors = append(errors, fmt.Sprintf("Failed to unstar album %s", albumId))
+		} else {
+			if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
+				log.Printf("Successfully unstarred album %s for user %d", albumId, userId)
+			} else {
+				log.Printf("Album %s was not starred by user %d", albumId, userId)
 			}
 		}
 	}
 
 	// Unstar artists
 	for _, artistId := range artistIds {
-		if s.isValidID(artistId) {
-			_, err := s.db.Exec(`
-				DELETE FROM starred_artists
-				WHERE user_id = $1 AND artist_id = $2
-			`, userId, artistId)
+		if !s.isValidID(artistId) {
+			log.Printf("Invalid artist ID provided: %s", artistId)
+			continue
+		}
 
-			if err != nil {
-				log.Printf("Error unstarring artist %s: %v", artistId, err)
+		result, err := s.db.Exec(`
+			DELETE FROM starred_artists
+			WHERE user_id = $1 AND artist_id = $2
+		`, userId, artistId)
+
+		if err != nil {
+			log.Printf("Error unstarring artist %s: %v", artistId, err)
+			errors = append(errors, fmt.Sprintf("Failed to unstar artist %s", artistId))
+		} else {
+			if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
+				log.Printf("Successfully unstarred artist %s for user %d", artistId, userId)
+			} else {
+				log.Printf("Artist %s was not starred by user %d", artistId, userId)
 			}
 		}
 	}
 
+	// If there were critical errors, log them
+	if len(errors) > 0 {
+		log.Printf("Unstar operation completed with %d errors", len(errors))
+	}
+
+	// Send successful response (Subsonic API doesn't send error details for unstar operations)
 	s.sendResponse(c, nil)
 }
 
@@ -1924,8 +2041,8 @@ func (s *Service) SetRating(c *gin.Context) { s.sendResponse(c, nil) }
 
 // Scrobble - Registers the local playback of one or more media files
 func (s *Service) Scrobble(c *gin.Context) {
-	// Get user from context
-	userId := 1 // TODO: Get from authenticated user context
+	// Get user ID from context
+	userId := s.getUserID(c)
 
 	// Get song IDs to scrobble
 	songIds := c.QueryArray("id")
@@ -1976,8 +2093,8 @@ func (s *Service) Scrobble(c *gin.Context) {
 
 // SetNowPlaying - Registers the local playback of a media file
 func (s *Service) SetNowPlaying(c *gin.Context) {
-	// Get user from context
-	userId := 1 // TODO: Get from authenticated user context
+	// Get user ID from context
+	userId := s.getUserID(c)
 
 	songId := c.Query("id")
 	if !s.isValidID(songId) {

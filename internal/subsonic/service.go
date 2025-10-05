@@ -381,3 +381,19 @@ func (s *Service) isValidID(id string) bool {
 	}
 	return true
 }
+
+// getUserID extracts user ID from the authenticated context
+// For now returns a fallback user ID of 1, but should be updated to use proper authentication
+func (s *Service) getUserID(c *gin.Context) int {
+	// TODO: Extract from JWT token or Subsonic authentication in the context
+	// For now, return default user ID 1
+	// This should be set by the AuthMiddleware after successful authentication
+	if userID, exists := c.Get("userID"); exists {
+		if id, ok := userID.(int); ok {
+			return id
+		}
+	}
+
+	// Fallback to user ID 1 for now
+	return 1
+}
