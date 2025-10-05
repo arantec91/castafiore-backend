@@ -1,0 +1,580 @@
+{{define "settings"}}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-cog me-2"></i>
+                Configuración del Servidor
+            </div>
+            <div class="card-body">
+                {{if .success}}
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="fas fa-check-circle me-2"></i>
+                    {{.success}}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {{end}}
+
+                {{if .error}}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    {{.error}}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {{end}}
+
+                <!-- Configuración de Directorio de Música -->
+                <form method="post" action="/admin/settings/update-music-path" class="mb-4">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="mb-3">
+                                <label class="form-label">Directorio de Música</label>
+                                <input type="text" name="music_path" class="form-control" value="{{.config.MusicPath}}" required>
+                                <small class="form-text text-muted">Ruta absoluta al directorio que contiene tu biblioteca musical</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save me-2"></i>Actualizar Directorio
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{if .musicStats}}
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <h6 class="card-title">Estadísticas del Directorio</h6>
+                                    {{if .musicStats.error}}
+                                        <div class="text-danger">
+                                            <i class="fas fa-exclamation-triangle me-1"></i>
+                                            {{.musicStats.error}}
+                                        </div>
+                                    {{else if .musicStats.exists}}
+                                        <div class="row text-center">
+                                            <div class="col-md-3">
+                                                <div class="fw-bold text-primary">
+                                                    {{.musicStats.fileCount}}
+                                                    {{if .musicStats.estimated}}<span class="text-warning">*</span>{{end}}
+                                                </div>
+                                                <small class="text-muted">Archivos de Música</small>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="fw-bold text-success">
+                                                    {{printf "%.1f MB" .musicStats.totalSize}}
+                                                    {{if .musicStats.estimated}}<span class="text-warning">*</span>{{end}}
+                                                </div>
+                                                <small class="text-muted">Tamaño Total</small>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="fw-bold text-info">
+                                                    {{if .musicStats.formats}}
+                                                        {{range $format, $count := .musicStats.formats}}
+                                                            <span class="badge bg-secondary me-1">{{$format}}: {{$count}}</span>
+                                                        {{end}}
+                                                    {{else}}
+                                                        <span class="text-muted">Sin archivos</span>
+                                                    {{end}}
+                                                </div>
+                                                <small class="text-muted">Formatos Encontrados</small>
+                                            </div>
+                                        </div>
+                                        {{if .musicStats.estimated}}
+                                        <div class="row mt-2">
+                                            <div class="col-12">
+                                                <div class="alert alert-info alert-sm py-2">
+                                                    <i class="fas fa-info-circle me-1"></i>
+                                                    <span class="text-warning">*</span> <small>Estadísticas estimadas para bibliotecas grandes. Para números exactos, ejecuta un escaneo completo.</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {{end}}
+                                    {{else}}
+                                        <div class="text-warning">
+                                            <i class="fas fa-folder-open me-1"></i>
+                                            Directorio no encontrado
+                                        </div>
+                                    {{end}}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </form>
+
+                <!-- Escaneo de Biblioteca -->
+                <div class="card bg-light mb-4">
+                    <div class="card-header">
+                        <i class="fas fa-search me-2"></i>
+                        Escaneo de Biblioteca Musical
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">
+                            Escanea el directorio de música para actualizar la base de datos con nuevos archivos.
+                            Para bibliotecas grandes (100k+ canciones), usa el escaneo optimizado.
+                        </p>
+                        
+                        <div id="library-stats" class="mb-3">
+                            <div class="row text-center">
+                                <div class="col-4">
+                                    <div class="fw-bold text-primary" id="artists-count">-</div>
+                                    <small class="text-muted">Artistas</small>
+                                </div>
+                                <div class="col-4">
+                                    <div class="fw-bold text-success" id="albums-count">-</div>
+                                    <small class="text-muted">Álbumes</small>
+                                </div>
+                                <div class="col-4">
+                                    <div class="fw-bold text-info" id="songs-count">-</div>
+                                    <small class="text-muted">Canciones</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Scan Mode Selection -->
+                        <div class="mb-3">
+                            <label class="form-label">Modo de Escaneo</label>
+                            <select id="scan-mode" class="form-select">
+                                <option value="fast">🚀 Rápido (Recomendado para +100k canciones)</option>
+                                <option value="incremental">📈 Incremental (Solo archivos nuevos/modificados)</option>
+                                <option value="full">🔄 Completo (Reescanea todo)</option>
+                            </select>
+                            <div class="form-text">
+                                <small>
+                                    <strong>Rápido:</strong> Procesamiento en lotes optimizado<br>
+                                    <strong>Incremental:</strong> Solo archivos nuevos desde último escaneo<br>
+                                    <strong>Completo:</strong> Escaneo tradicional (más lento para bibliotecas grandes)
+                                </small>
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-success" id="scan-library-btn">
+                                <i class="fas fa-sync-alt me-2"></i>Escanear Biblioteca
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" id="refresh-stats-btn">
+                                <i class="fas fa-chart-bar me-2"></i>Actualizar Estadísticas
+                            </button>
+                        </div>
+
+                        <div id="scan-status" class="mt-3 d-none">
+                            <div class="alert alert-info">
+                                <i class="fas fa-spinner fa-spin me-2"></i>
+                                <span id="scan-message">Escaneando biblioteca...</span>
+                            </div>
+                            <div class="progress mt-2">
+                                <div id="scan-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                            </div>
+                            <div class="text-center mt-1">
+                                <small id="scan-details" class="text-muted">Preparando escaneo...</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Performance Tips -->
+                        <div class="alert alert-warning mt-3" role="alert">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            <strong>Consejos para Bibliotecas Grandes:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Para +500k canciones: usa modo "Rápido" o "Incremental"</li>
+                                <li>El primer escaneo completo puede tomar varias horas</li>
+                                <li>Los escaneos incrementales son mucho más rápidos</li>
+                                <li>El escaneo no bloquea el servidor - puedes usar la aplicación mientras escanea</li>
+                            </ul>
+                        </div>
+                        
+                        {{if .success}}
+                        <div class="mt-3">
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                {{.success}}
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Configuración de Solo Lectura -->
+                <form>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Puerto del Servidor</label>
+                                <input type="text" class="form-control" value="{{.config.Port}}" readonly>
+                                <small class="form-text text-muted">Puerto donde se ejecuta el servidor</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Directorio Actual</label>
+                                <input type="text" class="form-control" value="{{.config.MusicPath}}" readonly>
+                                <small class="form-text text-muted">Directorio configurado actualmente</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Streams Simultáneos Máx.</label>
+                                <input type="number" class="form-control" value="{{.config.MaxConcurrentStreams}}" readonly>
+                                <small class="form-text text-muted">Límite por defecto para nuevos usuarios</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Descargas Diarias Máx.</label>
+                                <input type="number" class="form-control" value="{{.config.MaxDownloadsPerDay}}" readonly>
+                                <small class="form-text text-muted">Límite por defecto para nuevos usuarios</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">URL de Base de Datos</label>
+                        <input type="text" class="form-control" value="{{.config.DatabaseURL}}" readonly>
+                        <small class="form-text text-muted">Conexión a PostgreSQL (oculta por seguridad)</small>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Nota:</strong> Los cambios en el directorio de música se aplican inmediatamente. 
+                        Para otros cambios de configuración, modifica el archivo <code>.env</code> y reinicia el servidor.
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-info-circle me-2"></i>
+                Información del Sistema
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>Versión del Servidor:</strong><br>
+                    <span class="text-muted">Castafiore Backend v1.0.0</span>
+                </div>
+                <div class="mb-3">
+                    <strong>API Subsonic:</strong><br>
+                    <span class="text-muted">v1.16.1</span>
+                </div>
+                <div class="mb-3">
+                    <strong>Framework:</strong><br>
+                    <span class="text-muted">Gin (Go)</span>
+                </div>
+                <div class="mb-3">
+                    <strong>Base de Datos:</strong><br>
+                    <span class="text-muted">PostgreSQL</span>
+                </div>
+
+                <hr>
+
+                <div class="d-grid gap-2">
+                    <a href="/health" target="_blank" class="btn btn-success btn-sm">
+                        <i class="fas fa-heartbeat me-2"></i>Health Check
+                    </a>
+                    <a href="/rest/ping" target="_blank" class="btn btn-info btn-sm">
+                        <i class="fas fa-plug me-2"></i>API Ping
+                    </a>
+                    <a href="/" target="_blank" class="btn btn-primary btn-sm">
+                        <i class="fas fa-info me-2"></i>API Info
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <i class="fas fa-key me-2"></i>
+                Configuración de Clientes
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>URL del Servidor:</strong><br>
+                    <code>http://localhost:{{.config.Port}}</code>
+                </div>
+                <div class="mb-3">
+                    <strong>Endpoint Subsonic:</strong><br>
+                    <code>/rest</code>
+                </div>
+                <div class="mb-3">
+                    <strong>Ejemplo de URL completa:</strong><br>
+                    <small class="text-muted">
+                        <code>http://localhost:{{.config.Port}}/rest/ping</code>
+                    </small>
+                </div>
+
+                <div class="alert alert-warning alert-sm">
+                    <small>
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        Usa estas URLs para configurar clientes Subsonic como Castafiore, DSub, etc.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sección de variables de entorno -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-file-code me-2"></i>
+                Variables de Entorno
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Estas variables se pueden configurar en el archivo <code>.env</code> o como variables de entorno del sistema:
+                </p>
+                
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Variable</th>
+                                <th>Descripción</th>
+                                <th>Valor Actual</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>PORT</code></td>
+                                <td>Puerto del servidor HTTP</td>
+                                <td>{{.config.Port}}</td>
+                            </tr>
+                            <tr>
+                                <td><code>DATABASE_URL</code></td>
+                                <td>Conexión a PostgreSQL</td>
+                                <td><em>Configurada</em></td>
+                            </tr>
+                            <tr>
+                                <td><code>JWT_SECRET</code></td>
+                                <td>Clave secreta para JWT</td>
+                                <td><em>Configurada</em></td>
+                            </tr>
+                            <tr>
+                                <td><code>MUSIC_PATH</code></td>
+                                <td>Directorio de música</td>
+                                <td>{{.config.MusicPath}}</td>
+                            </tr>
+                            <tr>
+                                <td><code>MAX_CONCURRENT_STREAMS</code></td>
+                                <td>Streams simultáneos por defecto</td>
+                                <td>{{.config.MaxConcurrentStreams}}</td>
+                            </tr>
+                            <tr>
+                                <td><code>MAX_DOWNLOADS_PER_DAY</code></td>
+                                <td>Descargas diarias por defecto</td>
+                                <td>{{.config.MaxDownloadsPerDay}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Library scanning functionality
+document.addEventListener('DOMContentLoaded', function() {
+    loadLibraryStats();
+
+    // Scan library button
+    document.getElementById('scan-library-btn').addEventListener('click', function() {
+        scanLibrary();
+    });
+
+    // Refresh stats button
+    document.getElementById('refresh-stats-btn').addEventListener('click', function() {
+        loadLibraryStats();
+    });
+});
+
+function loadLibraryStats() {
+    fetch('/admin/api/library-stats')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('artists-count').textContent = data.artists || 0;
+            document.getElementById('albums-count').textContent = data.albums || 0;
+            document.getElementById('songs-count').textContent = data.songs || 0;
+        })
+        .catch(error => {
+            console.error('Error loading library stats:', error);
+            document.getElementById('artists-count').textContent = '-';
+            document.getElementById('albums-count').textContent = '-';
+            document.getElementById('songs-count').textContent = '-';
+        });
+}
+
+function scanLibrary() {
+    const scanBtn = document.getElementById('scan-library-btn');
+    const scanStatus = document.getElementById('scan-status');
+    const scanMessage = document.getElementById('scan-message');
+    const scanProgressBar = document.getElementById('scan-progress-bar');
+    const scanDetails = document.getElementById('scan-details');
+    const scanMode = document.getElementById('scan-mode').value;
+    
+    // Disable button and show status
+    scanBtn.disabled = true;
+    scanBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Escaneando...';
+    scanStatus.classList.remove('d-none');
+    
+    // Update message based on scan mode
+    let modeMessage = '';
+    switch(scanMode) {
+        case 'fast':
+            modeMessage = 'Escaneando biblioteca (modo optimizado)...';
+            break;
+        case 'incremental':
+            modeMessage = 'Escaneando archivos nuevos/modificados...';
+            break;
+        case 'full':
+            modeMessage = 'Escaneando biblioteca completa...';
+            break;
+        default:
+            modeMessage = 'Escaneando biblioteca...';
+    }
+    scanMessage.textContent = modeMessage;
+    
+    fetch(`/admin/api/scan-library?mode=${scanMode}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            // Show scanner type info
+            const scannerType = data.scanner || 'regular';
+            scanDetails.innerHTML = `Usando scanner: <strong>${scannerType}</strong> | Modo: <strong>${scanMode}</strong>`;
+            
+            // Iniciar monitoreo del progreso
+            monitorScanProgress();
+            
+            // Configurar actualizaciones periódicas de estadísticas durante el escaneo
+            let updateCount = 0;
+            const statsInterval = setInterval(() => {
+                loadLibraryStats();
+                updateCount++;
+                
+                // Detener las actualizaciones después de 20 intentos (aproximadamente 100 segundos)
+                if (updateCount >= 20) {
+                    clearInterval(statsInterval);
+                    
+                    // Actualizar una vez más después de un tiempo para capturar el resultado final
+                    setTimeout(() => {
+                        loadLibraryStats();
+                    }, 5000);
+                }
+            }, 5000); // Actualizar cada 5 segundos
+            
+        } else if (data.error) {
+            scanMessage.textContent = data.error;
+            scanProgressBar.classList.remove('progress-bar-animated');
+            scanProgressBar.classList.add('bg-danger');
+            scanDetails.textContent = 'Error al iniciar el escaneo';
+            
+            // Habilitar el botón después de 5 segundos
+            setTimeout(() => {
+                scanBtn.disabled = false;
+                scanBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Escanear Biblioteca';
+            }, 5000);
+        }
+    })
+    .catch(error => {
+        scanMessage.textContent = 'Error de conexión';
+        scanProgressBar.classList.remove('progress-bar-animated');
+        scanProgressBar.classList.add('bg-danger');
+        scanDetails.textContent = 'No se pudo conectar con el servidor';
+        
+        // Habilitar el botón después de 5 segundos
+        setTimeout(() => {
+            scanBtn.disabled = false;
+            scanBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Escanear Biblioteca';
+        }, 5000);
+    });
+}
+
+function monitorScanProgress() {
+    const scanBtn = document.getElementById('scan-library-btn');
+    const scanMessage = document.getElementById('scan-message');
+    const scanProgressBar = document.getElementById('scan-progress-bar');
+    const scanDetails = document.getElementById('scan-details');
+    const scanStatus = document.getElementById('scan-status');
+    
+    // Función para actualizar la barra de progreso
+    function updateProgress() {
+        fetch('/admin/api/scan-progress')
+            .then(response => response.json())
+            .then(data => {
+                // Actualizar barra de progreso
+                const percent = data.percent_complete.toFixed(1);
+                scanProgressBar.style.width = percent + '%';
+                scanProgressBar.setAttribute('aria-valuenow', percent);
+                scanProgressBar.textContent = percent + '%';
+                
+                // Actualizar detalles
+                if (data.is_scanning) {
+                    scanMessage.textContent = 'Escaneando biblioteca...';
+                    let detailsText = `Procesados ${data.processed_files} de ${data.total_files} archivos`;
+                    if (data.scanner_type) {
+                        detailsText += ` | Scanner: ${data.scanner_type}`;
+                    }
+                    scanDetails.textContent = detailsText;
+                    
+                    // Continuar monitoreando
+                    setTimeout(updateProgress, 1000);
+                } else {
+                    // Escaneo completado
+                    scanMessage.textContent = 'Escaneo completado';
+                    scanProgressBar.classList.remove('progress-bar-animated');
+                    scanProgressBar.classList.add('bg-success');
+                    
+                    if (data.last_error) {
+                        scanDetails.textContent = 'Completado con errores: ' + data.last_error;
+                    } else {
+                        scanDetails.textContent = `Procesados ${data.processed_files} archivos`;
+                    }
+                    
+                    // Actualizar estadísticas una vez más
+                    loadLibraryStats();
+                    
+                    // Habilitar el botón después de 3 segundos
+                    setTimeout(() => {
+                        scanBtn.disabled = false;
+                        scanBtn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Escanear Biblioteca';
+                        
+                        // Ocultar el estado del escaneo después de 5 segundos adicionales
+                        setTimeout(() => {
+                            scanStatus.classList.add('d-none');
+                        }, 5000);
+                    }, 3000);
+                }
+            })
+            .catch(error => {
+                console.error('Error monitoring scan progress:', error);
+                // Continuar monitoreando a pesar del error
+                setTimeout(updateProgress, 2000);
+            });
+    }
+    
+    // Iniciar monitoreo
+    updateProgress();
+}
+</script>
+
+{{end}}

@@ -1,0 +1,189 @@
+{{define "dashboard"}}
+<div class="row">
+    <!-- Estadísticas principales -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card primary">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-users fa-2x"></i>
+                    </div>
+                    <div>
+                        <div class="text-white-50 small">Usuarios</div>
+                        <div class="h4 mb-0" id="total-users">{{.data.TotalUsers}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card success">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-microphone fa-2x"></i>
+                    </div>
+                    <div>
+                        <div class="text-white-50 small">Artistas</div>
+                        <div class="h4 mb-0" id="total-artists">{{.data.TotalArtists}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card warning">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-compact-disc fa-2x"></i>
+                    </div>
+                    <div>
+                        <div class="text-white-50 small">Álbumes</div>
+                        <div class="h4 mb-0" id="total-albums">{{.data.TotalAlbums}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="fas fa-music fa-2x"></i>
+                    </div>
+                    <div>
+                        <div class="text-white-50 small">Canciones</div>
+                        <div class="h4 mb-0" id="total-songs">{{.data.TotalSongs}}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Información del sistema -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-info-circle me-2"></i>
+                Información del Sistema
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Configuración</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>Directorio de Música:</strong></li>
+                            <li class="text-muted mb-2">{{.data.MusicPath}}</li>
+                            <li><strong>API Subsonic:</strong></li>
+                            <li class="text-muted mb-2">v1.16.1</li>
+                            <li><strong>Servidor:</strong></li>
+                            <li class="text-muted">Castafiore Backend v1.0.0</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Enlaces Rápidos</h6>
+                        <div class="d-grid gap-2">
+                            <a href="/admin/users/create" class="btn btn-primary btn-sm">
+                                <i class="fas fa-plus me-2"></i>Crear Usuario
+                            </a>
+                            <a href="/admin/music" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-folder-open me-2"></i>Explorar Música
+                            </a>
+                            <a href="/rest/ping" target="_blank" class="btn btn-outline-success btn-sm">
+                                <i class="fas fa-plug me-2"></i>Test API
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Usuarios recientes -->
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-user-clock me-2"></i>
+                Usuarios Recientes
+            </div>
+            <div class="card-body">
+                {{if .data.RecentUsers}}
+                    {{range .data.RecentUsers}}
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="me-3">
+                            <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                <i class="fas fa-user text-white"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-bold">{{.Username}}</div>
+                            <div class="text-muted small">{{.Email}}</div>
+                            <span class="badge bg-secondary">{{.SubscriptionPlan}}</span>
+                        </div>
+                    </div>
+                    {{end}}
+                {{else}}
+                    <p class="text-muted text-center">No hay usuarios registrados</p>
+                {{end}}
+                
+                <div class="text-center mt-3">
+                    <a href="/admin/users" class="btn btn-outline-primary btn-sm">
+                        Ver todos los usuarios
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- API Status -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-plug me-2"></i>
+                Estado de la API
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="fas fa-heartbeat fa-2x text-success mb-2"></i>
+                            <h6>Health Check</h6>
+                            <a href="/health" target="_blank" class="btn btn-success btn-sm">Verificar</a>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="fas fa-music fa-2x text-info mb-2"></i>
+                            <h6>Subsonic API</h6>
+                            <a href="/rest/ping" target="_blank" class="btn btn-info btn-sm">Test Ping</a>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="fas fa-key fa-2x text-warning mb-2"></i>
+                            <h6>Licencia</h6>
+                            <a href="/rest/getLicense" target="_blank" class="btn btn-warning btn-sm">Verificar</a>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="fas fa-info-circle fa-2x text-primary mb-2"></i>
+                            <h6>API Info</h6>
+                            <a href="/" target="_blank" class="btn btn-primary btn-sm">Ver Info</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

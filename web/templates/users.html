@@ -1,0 +1,177 @@
+{{define "users"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <p class="text-muted">Gestiona los usuarios del sistema y sus permisos</p>
+    </div>
+    <a href="/admin/users/create" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>Crear Usuario
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <i class="fas fa-users me-2"></i>
+        Lista de Usuarios
+    </div>
+    <div class="card-body">
+        {{if .users}}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Email</th>
+                        <th>Plan</th>
+                        <th>Streams</th>
+                        <th>Descargas</th>
+                        <th>Admin</th>
+                        <th>Estado</th>
+                        <th>Creado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .users}}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center" style="width: 35px; height: 35px;">
+                                        <i class="fas fa-user text-white"></i>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="fw-bold">{{.Username}}</div>
+                                    <div class="text-muted small">ID: {{.ID}}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{.Email}}</td>
+                        <td>
+                            {{if eq .SubscriptionPlan "premium"}}
+                                <span class="badge bg-warning">Premium</span>
+                            {{else if eq .SubscriptionPlan "pro"}}
+                                <span class="badge bg-info">Pro</span>
+                            {{else}}
+                                <span class="badge bg-secondary">Free</span>
+                            {{end}}
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark">{{.MaxConcurrentStreams}}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark">{{.MaxDownloadsPerDay}}</span>
+                        </td>
+                        <td>
+                            {{if .IsAdmin}}
+                                <span class="badge bg-danger">Sí</span>
+                            {{else}}
+                                <span class="badge bg-light text-dark">No</span>
+                            {{end}}
+                        </td>
+                        <td>
+                            {{if .IsActive}}
+                                <span class="badge bg-success">Activo</span>
+                            {{else}}
+                                <span class="badge bg-danger">Inactivo</span>
+                            {{end}}
+                        </td>
+                        <td>
+                            <small class="text-muted">{{.CreatedAt}}</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-primary" title="Editar">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" title="Eliminar">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <div class="text-center py-5">
+            <i class="fas fa-users fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No hay usuarios registrados</h5>
+            <p class="text-muted">Crea el primer usuario para comenzar</p>
+            <a href="/admin/users/create" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i>Crear Usuario
+            </a>
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mt-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-users fa-2x mb-2"></i>
+                <h5>{{len .users}}</h5>
+                <small>Total Usuarios</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-user-check fa-2x mb-2"></i>
+                <h5 id="activeUsers">0</h5>
+                <small>Activos</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-crown fa-2x mb-2"></i>
+                <h5 id="premiumUsers">0</h5>
+                <small>Premium</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-danger text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-user-shield fa-2x mb-2"></i>
+                <h5 id="adminUsers">0</h5>
+                <small>Admins</small>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Calcular estadísticas de usuarios desde la tabla
+    const rows = document.querySelectorAll('tbody tr');
+    let activeCount = 0, premiumCount = 0, adminCount = 0;
+    
+    rows.forEach(row => {
+        const statusBadge = row.querySelector('td:nth-child(7) .badge');
+        const planBadge = row.querySelector('td:nth-child(3) .badge');
+        const adminBadge = row.querySelector('td:nth-child(6) .badge');
+        
+        if (statusBadge && statusBadge.textContent.trim() === 'Activo') {
+            activeCount++;
+        }
+        if (planBadge && planBadge.textContent.trim() === 'Premium') {
+            premiumCount++;
+        }
+        if (adminBadge && adminBadge.textContent.trim() === 'Sí') {
+            adminCount++;
+        }
+    });
+    
+    document.getElementById('activeUsers').textContent = activeCount;
+    document.getElementById('premiumUsers').textContent = premiumCount;
+    document.getElementById('adminUsers').textContent = adminCount;
+});
+</script>

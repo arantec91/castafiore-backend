@@ -1,0 +1,649 @@
+{{define "music_browser"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        {{if .searchQuery}}
+            <h4><i class="fas fa-search me-2"></i>Resultados de Búsqueda</h4>
+            <p class="text-muted">Resultados para: <strong>"{{.searchQuery}}"</strong></p>
+        {{else}}
+            <h4><i class="fas fa-music me-2"></i>Biblioteca Musical</h4>
+            <p class="text-muted">Explora tu colección de música organizada</p>
+        {{end}}
+        <small class="text-muted">
+            <i class="fas fa-folder me-1"></i>
+            Directorio: <code>{{.path}}</code>
+        </small>
+    </div>
+    <div>
+        <div class="d-flex gap-2">
+            <!-- Barra de búsqueda -->
+            <form method="get" action="/admin/music/search" class="d-flex">
+                <div class="input-group">
+                    <input type="text" name="q" class="form-control" placeholder="Buscar música..." 
+                           value="{{.searchQuery}}" {{if .searchQuery}}autofocus{{end}}>
+                    {{if .searchQuery}}
+                        <input type="hidden" name="section" value="{{.library.Section}}">
+                    {{end}}
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="fas fa-search"></i>
+                    </button>
+                    {{if .searchQuery}}
+                        <a href="/admin/music" class="btn btn-outline-secondary">
+                            <i class="fas fa-times"></i>
+                        </a>
+                    {{end}}
+                </div>
+            </form>
+            <button class="btn btn-outline-primary" onclick="location.reload()">
+                <i class="fas fa-sync-alt me-2"></i>Actualizar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Pestañas de navegación -->
+<style>
+.nav-tabs .nav-link {
+    color: #495057 !important;
+}
+.nav-tabs .nav-link:hover {
+    color: #007bff !important;
+}
+.nav-tabs .nav-link.active {
+    color: #007bff !important;
+    background-color: #fff;
+    border-color: #dee2e6 #dee2e6 #fff;
+}
+</style>
+
+<ul class="nav nav-tabs mb-4" id="libraryTabs" role="tablist">
+    {{if .searchQuery}}
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {{if eq .library.Section "all"}}active{{end}}" 
+               href="/admin/music/search?q={{.searchQuery}}&section=all">
+                <i class="fas fa-search me-2"></i>Todos los Resultados
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {{if eq .library.Section "artists"}}active{{end}}" 
+               href="/admin/music/search?q={{.searchQuery}}&section=artists">
+                <i class="fas fa-user-friends me-2"></i>Artistas
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {{if eq .library.Section "albums"}}active{{end}}" 
+               href="/admin/music/search?q={{.searchQuery}}&section=albums">
+                <i class="fas fa-compact-disc me-2"></i>Álbumes
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {{if eq .library.Section "songs"}}active{{end}}" 
+               href="/admin/music/search?q={{.searchQuery}}&section=songs">
+                <i class="fas fa-music me-2"></i>Canciones
+            </a>
+        </li>
+    {{else}}
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {{if eq .library.Section "artists"}}active{{end}}" 
+               href="/admin/music?section=artists">
+                <i class="fas fa-user-friends me-2"></i>Artistas
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {{if eq .library.Section "albums"}}active{{end}}" 
+               href="/admin/music?section=albums{{if .library.ArtistFilter}}&artist={{.library.ArtistFilter}}{{end}}">
+                <i class="fas fa-compact-disc me-2"></i>Álbumes
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link {{if eq .library.Section "songs"}}active{{end}}" 
+               href="/admin/music?section=songs{{if .library.ArtistFilter}}&artist={{.library.ArtistFilter}}{{end}}">
+                <i class="fas fa-music me-2"></i>Canciones
+            </a>
+        </li>
+    {{end}}
+</ul>
+
+<!-- Filtros -->
+{{if .library.ArtistFilter}}
+<div class="alert alert-info alert-dismissible fade show" role="alert">
+    <i class="fas fa-filter me-2"></i>
+    Mostrando contenido del artista: <strong>{{.library.ArtistFilter}}</strong>
+    <a href="/admin/music?section={{.library.Section}}" class="btn btn-sm btn-outline-secondary ms-2">
+        <i class="fas fa-times me-1"></i>Quitar filtro
+    </a>
+    <button type="button" class="btn-close" onclick="window.location.href='/admin/music?section={{.library.Section}}'"></button>
+</div>
+{{end}}
+
+<!-- Contenido de la biblioteca -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            {{if eq .library.Section "artists"}}
+                <i class="fas fa-user-friends me-2"></i>Artistas
+            {{else if eq .library.Section "albums"}}
+                <i class="fas fa-compact-disc me-2"></i>Álbumes
+            {{else if eq .library.Section "songs"}}
+                <i class="fas fa-music me-2"></i>Canciones
+            {{end}}
+            <span class="badge bg-primary ms-2">{{.library.TotalRecords}} elementos</span>
+        </div>
+        <div class="text-muted small">
+            Página {{.library.CurrentPage}} de {{.library.TotalPages}}
+        </div>
+    </div>
+    <div class="card-body">
+        {{if eq .library.Section "all"}}
+            {{if .searchResults}}
+                <!-- Resultados de búsqueda combinados -->
+                {{if .searchResults.Artists}}
+                    <h6><i class="fas fa-user-friends me-2"></i>Artistas encontrados</h6>
+                    <div class="row mb-4">
+                        {{range .searchResults.Artists}}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-user-friends text-primary me-2"></i>
+                                        {{.Name}}
+                                    </h6>
+                                    <div class="text-muted small mb-2">
+                                        <div><i class="fas fa-compact-disc me-1"></i>{{.AlbumCount}} álbumes</div>
+                                        <div><i class="fas fa-music me-1"></i>{{.SongCount}} canciones</div>
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <a href="/admin/music?section=albums&artist={{.Name}}" class="btn btn-sm btn-outline-primary">
+                                            Ver Álbumes
+                                        </a>
+                                        <a href="/admin/music?section=songs&artist={{.Name}}" class="btn btn-sm btn-outline-secondary">
+                                            Ver Canciones
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                {{end}}
+
+                {{if .searchResults.Albums}}
+                    <h6><i class="fas fa-compact-disc me-2"></i>Álbumes encontrados</h6>
+                    <div class="row mb-4">
+                        {{range .searchResults.Albums}}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-compact-disc text-primary me-2"></i>
+                                        {{.Name}}
+                                    </h6>
+                                    <div class="text-muted small mb-2">
+                                        <div><i class="fas fa-user me-1"></i>{{.ArtistName}}</div>
+                                        {{if gt .Year 0}}<div><i class="fas fa-calendar me-1"></i>{{.Year}}</div>{{end}}
+                                        <div><i class="fas fa-music me-1"></i>{{.SongCount}} canciones</div>
+                                        {{if gt .Duration 0}}<div><i class="fas fa-clock me-1"></i>{{printf "%.1f" (div (printf "%.0f" .Duration) 60.0)}} min</div>{{end}}
+                                    </div>
+                                    <div class="d-flex gap-2">
+                                        <a href="/admin/music?section=songs&artist={{.ArtistName}}" class="btn btn-sm btn-outline-primary">
+                                            Ver Canciones
+                                        </a>
+                                        <a href="/admin/music?section=artists" class="btn btn-sm btn-outline-secondary">
+                                            Ver Artista
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                {{end}}
+
+                {{if .searchResults.Songs}}
+                    <h6><i class="fas fa-music me-2"></i>Canciones encontradas</h6>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Título</th>
+                                    <th>Artista</th>
+                                    <th>Álbum</th>
+                                    <th>Duración</th>
+                                    <th>Formato</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range .searchResults.Songs}}
+                                <tr>
+                                    <td>{{if gt .Track 0}}{{.Track}}{{else}}-{{end}}</td>
+                                    <td>
+                                        <i class="fas fa-music text-primary me-2"></i>
+                                        <strong>{{.Title}}</strong>
+                                    </td>
+                                    <td>
+                                        <a href="/admin/music?section=albums&artist={{.ArtistName}}" class="text-decoration-none">
+                                            {{.ArtistName}}
+                                        </a>
+                                    </td>
+                                    <td>{{.AlbumName}}</td>
+                                    <td>
+                                        {{if gt .Duration 0}}
+                                            {{printf "%d:%02d" (div .Duration 60) (mod .Duration 60)}}
+                                        {{else}}
+                                            -
+                                        {{end}}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{.Suffix}}</span>
+                                        {{if gt .BitRate 0}}<small class="text-muted">{{.BitRate}}kbps</small>{{end}}
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-primary" title="Información">
+                                                <i class="fas fa-info-circle"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-success" title="Reproducir">
+                                                <i class="fas fa-play"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                    </div>
+                {{end}}
+
+                {{if not .searchResults.Artists}}{{if not .searchResults.Albums}}{{if not .searchResults.Songs}}
+                    <div class="text-center py-5">
+                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No se encontraron resultados</h5>
+                        <p class="text-muted">Intenta con otros términos de búsqueda</p>
+                        <a href="/admin/music" class="btn btn-primary">
+                            <i class="fas fa-arrow-left me-2"></i>Volver a la Biblioteca
+                        </a>
+                    </div>
+                {{end}}{{end}}{{end}}
+            {{end}}
+        {{else if eq .library.Section "artists"}}
+            {{if .library.Artists}}
+                <div class="row">
+                    {{range .library.Artists}}
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-user-friends text-primary me-2"></i>
+                                    {{.Name}}
+                                </h6>
+                                <div class="text-muted small mb-2">
+                                    <div><i class="fas fa-compact-disc me-1"></i>{{.AlbumCount}} álbumes</div>
+                                    <div><i class="fas fa-music me-1"></i>{{.SongCount}} canciones</div>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <a href="/admin/music?section=albums&artist={{.Name}}" class="btn btn-sm btn-outline-primary">
+                                        Ver Álbumes
+                                    </a>
+                                    <a href="/admin/music?section=songs&artist={{.Name}}" class="btn btn-sm btn-outline-secondary">
+                                        Ver Canciones
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            {{else}}
+                <div class="text-center py-5">
+                    <i class="fas fa-user-friends fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No se encontraron artistas</h5>
+                    <p class="text-muted">La biblioteca musical parece estar vacía</p>
+                </div>
+            {{end}}
+        {{else if eq .library.Section "albums"}}
+            {{if .library.Albums}}
+                <div class="row">
+                    {{range .library.Albums}}
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-compact-disc text-primary me-2"></i>
+                                    {{.Name}}
+                                </h6>
+                                <div class="text-muted small mb-2">
+                                    <div><i class="fas fa-user me-1"></i>{{.ArtistName}}</div>
+                                    {{if gt .Year 0}}<div><i class="fas fa-calendar me-1"></i>{{.Year}}</div>{{end}}
+                                    <div><i class="fas fa-music me-1"></i>{{.SongCount}} canciones</div>
+                                    {{if gt .Duration 0}}<div><i class="fas fa-clock me-1"></i>{{div .Duration 60}} min</div>{{end}}
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <a href="/admin/music?section=songs&artist={{.ArtistName}}" class="btn btn-sm btn-outline-primary">
+                                        Ver Canciones
+                                    </a>
+                                    <a href="/admin/music?section=artists" class="btn btn-sm btn-outline-secondary">
+                                        Ver Artista
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            {{else}}
+                <div class="text-center py-5">
+                    <i class="fas fa-compact-disc fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No se encontraron álbumes</h5>
+                    <p class="text-muted">{{if .library.ArtistFilter}}Este artista no tiene álbumes{{else}}La biblioteca musical parece estar vacía{{end}}</p>
+                </div>
+            {{end}}
+        {{else if eq .library.Section "songs"}}
+            {{if .library.Songs}}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Título</th>
+                                <th>Artista</th>
+                                <th>Álbum</th>
+                                <th>Duración</th>
+                                <th>Formato</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .library.Songs}}
+                            <tr>
+                                <td>{{if gt .Track 0}}{{.Track}}{{else}}-{{end}}</td>
+                                <td>
+                                    <i class="fas fa-music text-primary me-2"></i>
+                                    <strong>{{.Title}}</strong>
+                                </td>
+                                <td>
+                                    <a href="/admin/music?section=albums&artist={{.ArtistName}}" class="text-decoration-none">
+                                        {{.ArtistName}}
+                                    </a>
+                                </td>
+                                <td>{{.AlbumName}}</td>
+                                <td>
+                                    {{if gt .Duration 0}}
+                                        {{printf "%d:%02d" (div .Duration 60) (mod .Duration 60)}}
+                                    {{else}}
+                                        -
+                                    {{end}}
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{.Suffix}}</span>
+                                    {{if gt .BitRate 0}}<small class="text-muted">{{.BitRate}}kbps</small>{{end}}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button type="button" class="btn btn-outline-primary" title="Información">
+                                            <i class="fas fa-info-circle"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-outline-success" title="Reproducir">
+                                            <i class="fas fa-play"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            {{else}}
+                <div class="text-center py-5">
+                    <i class="fas fa-music fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No se encontraron canciones</h5>
+                    <p class="text-muted">{{if .library.ArtistFilter}}Este artista no tiene canciones{{else}}La biblioteca musical parece estar vacía{{end}}</p>
+                </div>
+            {{end}}
+        {{end}}
+    </div>
+</div>
+
+<!-- Paginación -->
+{{if gt .library.TotalPages 1}}
+<nav aria-label="Navegación de biblioteca" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {{if gt .library.CurrentPage 1}}
+            <li class="page-item">
+                {{if .searchQuery}}
+                    <a class="page-link" href="/admin/music/search?q={{.searchQuery}}&section={{.library.Section}}&page={{sub .library.CurrentPage 1}}">
+                {{else}}
+                    <a class="page-link" href="/admin/music?section={{.library.Section}}&page={{sub .library.CurrentPage 1}}{{if .library.ArtistFilter}}&artist={{.library.ArtistFilter}}{{end}}">
+                {{end}}
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </a>
+            </li>
+        {{end}}
+        
+        {{$current := .library.CurrentPage}}
+        {{$total := .library.TotalPages}}
+        {{$section := .library.Section}}
+        {{$filter := .library.ArtistFilter}}
+        {{$searchQuery := .searchQuery}}
+        
+        {{if gt $current 2}}
+            <li class="page-item">
+                {{if $searchQuery}}
+                    <a class="page-link" href="/admin/music/search?q={{$searchQuery}}&section={{$section}}&page=1">1</a>
+                {{else}}
+                    <a class="page-link" href="/admin/music?section={{$section}}&page=1{{if $filter}}&artist={{$filter}}{{end}}">1</a>
+                {{end}}
+            </li>
+            {{if gt $current 3}}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {{end}}
+        {{end}}
+        
+        {{if gt $current 1}}
+            <li class="page-item">
+                {{if $searchQuery}}
+                    <a class="page-link" href="/admin/music/search?q={{$searchQuery}}&section={{$section}}&page={{sub $current 1}}">{{sub $current 1}}</a>
+                {{else}}
+                    <a class="page-link" href="/admin/music?section={{$section}}&page={{sub $current 1}}{{if $filter}}&artist={{$filter}}{{end}}">{{sub $current 1}}</a>
+                {{end}}
+            </li>
+        {{end}}
+        
+        <li class="page-item active">
+            <span class="page-link">{{$current}}</span>
+        </li>
+        
+        {{if lt $current $total}}
+            <li class="page-item">
+                {{if $searchQuery}}
+                    <a class="page-link" href="/admin/music/search?q={{$searchQuery}}&section={{$section}}&page={{add $current 1}}">{{add $current 1}}</a>
+                {{else}}
+                    <a class="page-link" href="/admin/music?section={{$section}}&page={{add $current 1}}{{if $filter}}&artist={{$filter}}{{end}}">{{add $current 1}}</a>
+                {{end}}
+            </li>
+        {{end}}
+        
+        {{if lt $current (sub $total 1)}}
+            {{if lt $current (sub $total 2)}}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {{end}}
+            <li class="page-item">
+                {{if $searchQuery}}
+                    <a class="page-link" href="/admin/music/search?q={{$searchQuery}}&section={{$section}}&page={{$total}}">{{$total}}</a>
+                {{else}}
+                    <a class="page-link" href="/admin/music?section={{$section}}&page={{$total}}{{if $filter}}&artist={{$filter}}{{end}}">{{$total}}</a>
+                {{end}}
+            </li>
+        {{end}}
+        
+        {{if lt .library.CurrentPage .library.TotalPages}}
+            <li class="page-item">
+                {{if .searchQuery}}
+                    <a class="page-link" href="/admin/music/search?q={{.searchQuery}}&section={{.library.Section}}&page={{add .library.CurrentPage 1}}">
+                {{else}}
+                    <a class="page-link" href="/admin/music?section={{.library.Section}}&page={{add .library.CurrentPage 1}}{{if .library.ArtistFilter}}&artist={{.library.ArtistFilter}}{{end}}">
+                {{end}}
+                    Siguiente <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+        {{end}}
+    </ul>
+</nav>
+{{end}}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Funcionalidad adicional para la biblioteca
+    console.log('Biblioteca musical cargada');
+    
+    // Agregar botón para probar la API search3 de Subsonic
+    addSubsonicSearchDemo();
+});
+
+function addSubsonicSearchDemo() {
+    // Crear contenedor para la demo
+    const demoContainer = document.createElement('div');
+    demoContainer.className = 'mt-4 p-3 bg-light rounded border';
+    demoContainer.innerHTML = `
+        <h6><i class="fas fa-code me-2"></i>Demo API Subsonic search3</h6>
+        <p class="small text-muted">Prueba la API search3 de Subsonic compatible con clientes externos</p>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div class="input-group input-group-sm">
+                    <input type="text" id="subsonicQuery" class="form-control" placeholder="Buscar con API Subsonic..." value="{{.searchQuery}}">
+                    <button type="button" class="btn btn-outline-info" onclick="testSubsonicSearch()">
+                        <i class="fas fa-search me-1"></i>Buscar con API
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <select class="form-select form-select-sm" id="responseFormat">
+                    <option value="json">JSON Response</option>
+                    <option value="xml">XML Response</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="subsonicResults" class="mt-3" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">Respuesta de la API:</small>
+                <button class="btn btn-sm btn-outline-secondary" onclick="toggleRawResponse()">
+                    <i class="fas fa-code"></i> Raw
+                </button>
+            </div>
+            <div id="processedResults" class="mt-2"></div>
+            <pre id="rawResponse" class="mt-2 p-2 bg-dark text-light small" style="display: none; max-height: 300px; overflow-y: auto;"></pre>
+        </div>
+    `;
+    
+    // Agregar después de la última sección de contenido
+    const lastSection = document.querySelector('.tab-content') || document.querySelector('.container-fluid > div:last-child');
+    if (lastSection) {
+        lastSection.parentNode.insertBefore(demoContainer, lastSection.nextSibling);
+    }
+}
+
+async function testSubsonicSearch() {
+    const query = document.getElementById('subsonicQuery').value.trim();
+    if (!query) {
+        alert('Por favor ingresa un término de búsqueda');
+        return;
+    }
+    
+    const format = document.getElementById('responseFormat').value;
+    const resultsDiv = document.getElementById('subsonicResults');
+    const processedDiv = document.getElementById('processedResults');
+    const rawDiv = document.getElementById('rawResponse');
+    
+    try {
+        // Mostrar loading
+        processedDiv.innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Buscando...</div>';
+        resultsDiv.style.display = 'block';
+        
+        // Hacer petición a la API search3
+        const url = '/rest/search3?query=' + encodeURIComponent(query) + '&f=' + format + '&artistCount=10&albumCount=10&songCount=10';
+        const response = await fetch(url);
+        const data = format === 'json' ? await response.json() : await response.text();
+        
+        // Mostrar respuesta raw
+        rawDiv.textContent = format === 'json' ? JSON.stringify(data, null, 2) : data;
+        
+        // Procesar y mostrar resultados
+        if (format === 'json') {
+            displayJsonResults(data);
+        } else {
+            displayXmlResults(data);
+        }
+        
+    } catch (error) {
+        processedDiv.innerHTML = '<div class="alert alert-danger">Error: ' + error.message + '</div>';
+        rawDiv.textContent = error.toString();
+    }
+}
+
+function displayJsonResults(data) {
+    const processedDiv = document.getElementById('processedResults');
+    const searchResult = data['subsonic-response'] && data['subsonic-response'].searchResult3;
+    
+    if (!searchResult) {
+        processedDiv.innerHTML = '<div class="alert alert-warning">No se encontraron resultados</div>';
+        return;
+    }
+    
+    let html = '<div class="row">';
+    
+    // Artistas
+    if (searchResult.artist && searchResult.artist.length > 0) {
+        html += '<div class="col-md-4">' +
+            '<h6 class="text-primary">Artistas (' + searchResult.artist.length + ')</h6>' +
+            '<ul class="list-unstyled small">';
+        searchResult.artist.forEach(function(artist) {
+            html += '<li><i class="fas fa-user me-1"></i>' + artist.name + '</li>';
+        });
+        html += '</ul></div>';
+    }
+    
+    // Álbumes
+    if (searchResult.album && searchResult.album.length > 0) {
+        html += '<div class="col-md-4">' +
+            '<h6 class="text-success">Álbumes (' + searchResult.album.length + ')</h6>' +
+            '<ul class="list-unstyled small">';
+        searchResult.album.forEach(function(album) {
+            html += '<li><i class="fas fa-compact-disc me-1"></i>' + album.name + ' - ' + album.artist + '</li>';
+        });
+        html += '</ul></div>';
+    }
+    
+    // Canciones
+    if (searchResult.song && searchResult.song.length > 0) {
+        html += '<div class="col-md-4">' +
+            '<h6 class="text-info">Canciones (' + searchResult.song.length + ')</h6>' +
+            '<ul class="list-unstyled small">';
+        searchResult.song.forEach(function(song) {
+            html += '<li><i class="fas fa-music me-1"></i>' + song.title + ' - ' + song.artist + '</li>';
+        });
+        html += '</ul></div>';
+    }
+    
+    html += '</div>';
+    
+    if (html === '<div class="row"></div>') {
+        processedDiv.innerHTML = '<div class="alert alert-info">La búsqueda no devolvió resultados</div>';
+    } else {
+        processedDiv.innerHTML = html;
+    }
+}
+
+function displayXmlResults(xmlText) {
+    const processedDiv = document.getElementById('processedResults');
+    // Para XML, simplemente mostrar que se recibió
+    processedDiv.innerHTML = '<div class="alert alert-info">Respuesta XML recibida. Ver contenido en "Raw" para detalles.</div>';
+}
+
+function toggleRawResponse() {
+    const rawDiv = document.getElementById('rawResponse');
+    rawDiv.style.display = rawDiv.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+{{end}}

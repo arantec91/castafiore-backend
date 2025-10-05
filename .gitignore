@@ -1,0 +1,115 @@
+# Binarios y ejecutables
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+main.exe
+castafiore.exe
+castafiore-backend.exe
+scanner.exe
+server.exe
+
+# Dependencias
+/vendor/
+
+# Variables de entorno
+.env
+.env.*
+
+# Logs
+*.log
+debug_*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporales
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Base de datos
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos de música (no versionar bibliotecas grandes)
+/music/
+
+# Cover art y archivos multimedia
+/covers/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+*.mp3
+*.flac
+*.wav
+*.m4a
+*.ogg
+*.wma
+
+# Archivos de configuración con datos sensibles
+config/music_path.txt
+
+# Documentación temporal y archivos de desarrollo
+*_IMPLEMENTATION.md
+*_FIX.md
+*_README.md
+*_REPORT.md
+*_GUIDE.md
+*_SUCCESS_REPORT.md
+RESUMEN_*.md
+ALBUM_PAGINATION_FIX.md
+ANDROID_CLIENT_ENDPOINTS.md
+API_RESPONSE_EXAMPLES.md
+DURATION_BITRATE_FIX.md
+IMPLEMENTATION_SUMMARY.md
+LASTFM_SETUP.md
+OPTIMIZATION_GUIDE.md
+OPTIMIZATION_SUCCESS_REPORT.md
+SCANNER_OPTIMIZATION_README.md
+SCANNER_TRANSACTION_FIX.md
+SEARCH3_IMPLEMENTATION.md
+SIMILAR_SONGS_IMPLEMENTATION.md
+TESTING_GUIDE.md
+TIMEOUT_FIX_README.md
+albums_page_response.html
+test-scanner-fix.go
+
+# Docker volumes y datos
+docker-data/
+postgres-data/
+
+# Directorios de runtime
+runtime/
+logs/
+
+# Coverage
+coverage.out
+coverage.html
+
+# Go build artifacts
+*.test
+*.prof
+*.out
