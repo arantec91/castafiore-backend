@@ -2275,7 +2275,7 @@ func (s *Service) GetArtistInfo2(c *gin.Context) {
 		return
 	}
 
-	// Get artist from database to verify it exists
+	// Get artist from database to verify it exists and get name
 	var artistName string
 	err := s.db.QueryRow("SELECT name FROM artists WHERE id = $1", id).Scan(&artistName)
 	if err != nil {
@@ -2289,54 +2289,80 @@ func (s *Service) GetArtistInfo2(c *gin.Context) {
 
 	// Create artist info response with basic information
 	artistInfo := &ArtistInfo2{
-		Biography: "Artist information is not available at this time.",
-		// Optional fields - these would typically come from external services like Last.fm
-		// MusicBrainzID: "",
-		// LastFmUrl: "",
-		// SmallImageUrl: "",
-		// MediumImageUrl: "",
-		// LargeImageUrl: "",
-		SimilarArtist: []ArtistID3{}, // Empty array for now
+		Biography:     "No hay información disponible para este artista.",
+		SimilarArtist: []ArtistID3{},
 	}
 
-	// Optionally, get similar artists from the same genre
-	count := 6 // Default count for similar artists
+	// Get the requested count for similar artists
+	count := 20 // default count for similar artists
 	if countStr := c.Query("count"); countStr != "" {
-		if parsed, err := strconv.Atoi(countStr); err == nil && parsed > 0 && parsed <= 20 {
+		if parsed, err := strconv.Atoi(countStr); err == nil && parsed > 0 && parsed <= 100 {
 			count = parsed
 		}
 	}
 
-	// Get artists from the same genre as similar artists
-	rows, err := s.db.Query(`
-		SELECT DISTINCT ar2.id, ar2.name, COUNT(al2.id) as album_count
-		FROM artists ar2
-		LEFT JOIN albums al2 ON ar2.id = al2.artist_id
-		WHERE ar2.id != $1
-		AND EXISTS (
-			SELECT 1 FROM albums al1 
-			JOIN albums al3 ON al1.genre = al3.genre 
-			WHERE al1.artist_id = $1 AND al3.artist_id = ar2.id
-		)
-		GROUP BY ar2.id, ar2.name
-		ORDER BY ar2.name
-		LIMIT $2
-	`, id, count)
+	// Try to get artist info and similar artists from Last.fm if available
+	if s.lastfm != nil {
+		log.Printf("GetArtistInfo2: Requesting artist info from Last.fm for: %s", artistName)
 
-	if err == nil {
-		defer rows.Close()
-		var similarArtists []ArtistID3
-
-		for rows.Next() {
-			var artist ArtistID3
-			var albumCount int
-			err := rows.Scan(&artist.ID, &artist.Name, &albumCount)
-			if err == nil {
-				artist.AlbumCount = albumCount
-				similarArtists = append(similarArtists, artist)
+		// Get basic artist info (biography, images, etc)
+		if lastfmInfo, err := s.lastfm.GetArtistInfo(artistName); err == nil {
+			// Set biography
+			if lastfmInfo.Artist.Bio.Summary != "" {
+				artistInfo.Biography = lastfmInfo.Artist.Bio.Summary
 			}
+
+			// Set MusicBrainz ID if available
+			if lastfmInfo.Artist.MBID != "" {
+				artistInfo.MusicBrainzID = lastfmInfo.Artist.MBID
+			}
+
+			// Set Last.fm URL
+			if lastfmInfo.Artist.URL != "" {
+				artistInfo.LastFmUrl = lastfmInfo.Artist.URL
+			}
+
+			// Set images if available
+			for _, img := range lastfmInfo.Artist.Images {
+				switch img.Size {
+				case "small":
+					artistInfo.SmallImageUrl = img.Text
+				case "medium":
+					artistInfo.MediumImageUrl = img.Text
+				case "large":
+					artistInfo.LargeImageUrl = img.Text
+				}
+			}
+		} else {
+			log.Printf("GetArtistInfo2: Error getting artist info from Last.fm: %v", err)
 		}
-		artistInfo.SimilarArtist = similarArtists
+
+		// Get similar artists with the new method
+		if similarArtists, err := s.lastfm.GetSimilarArtists(artistName, count); err == nil {
+			log.Printf("GetArtistInfo2: Found %d similar artists from Last.fm before filtering",
+				len(similarArtists.SimilarArtists.Artist))
+
+			// Convert Last.fm similar artists directly to ArtistID3 objects
+			// Filter out artists with "&" or "," in their names
+			for _, artist := range similarArtists.SimilarArtists.Artist {
+				// Skip artists with multiple names
+				if strings.Contains(artist.Name, "&") || strings.Contains(artist.Name, ",") {
+					log.Printf("GetArtistInfo2: Skipping multiple artist name: %s", artist.Name)
+					continue
+				}
+
+				similarArtist := ArtistID3{
+					Name:       artist.Name,
+					AlbumCount: 0, // Since we're not checking local database
+				}
+				artistInfo.SimilarArtist = append(artistInfo.SimilarArtist, similarArtist)
+			}
+
+			log.Printf("GetArtistInfo2: Added %d similar artists from Last.fm after filtering",
+				len(artistInfo.SimilarArtist))
+		} else {
+			log.Printf("GetArtistInfo2: Error getting similar artists from Last.fm: %v", err)
+		}
 	}
 
 	s.sendResponse(c, artistInfo)
@@ -2463,7 +2489,7 @@ func (s *Service) GetSimilarSongs2(c *gin.Context) {
 	s.sendResponse(c, result)
 }
 
-// findLocalSongsFromLastFM tries to find local songs matching Last.fm recommendations
+// findLocalSongsFromLastFM tries to find local songs that match Last.fm recommendations
 func (s *Service) findLocalSongsFromLastFM(lastfmTracks interface{}, limit int) []Child {
 	var songs []Child
 	processedTracks := make(map[string]bool) // To avoid duplicates
@@ -2828,13 +2854,8 @@ func (s *Service) Download(c *gin.Context) {
 	case "flac":
 		mimeType = "audio/flac"
 	case "ogg":
-		mimeType = "audio/ogg"
-	case "m4a", "aac":
-		mimeType = "audio/mp4"
-	case "wav":
-		mimeType = "audio/wav"
-	case "opus":
-		mimeType = "audio/opus"
+		return
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.%s\"", fileName, contentType))
 	}
 
 	// Set headers for download

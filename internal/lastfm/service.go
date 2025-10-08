@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -114,6 +115,33 @@ type LastFMResponse struct {
 	SimilarTracks *SimilarTracksResponse `json:"similartracks,omitempty"`
 	Error         int                    `json:"error,omitempty"`
 	Message       string                 `json:"message,omitempty"`
+}
+
+// ArtistInfoResponse represents the response from Last.fm's artist.getInfo method
+type ArtistInfoResponse struct {
+	Error   int    `json:"error,omitempty"`
+	Message string `json:"message,omitempty"`
+	Artist  struct {
+		Name string `json:"name"`
+		MBID string `json:"mbid"`
+		URL  string `json:"url"`
+		Bio  struct {
+			Summary   string `json:"summary"`
+			Content   string `json:"content"`
+			Published string `json:"published"`
+		} `json:"bio"`
+		Similar struct {
+			Artist []struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+				MBID string `json:"mbid"`
+			} `json:"artist"`
+		} `json:"similar"`
+		Images []struct {
+			Size string `json:"size"`
+			Text string `json:"#text"`
+		} `json:"image"`
+	} `json:"artist"`
 }
 
 func NewService(config Config) *Service {
@@ -297,4 +325,167 @@ func (s *Service) GetTopTracks(artistName string) ([]TopTrack, error) {
 	log.Printf("[LastFM] Successfully fetched %d top tracks for artist %s",
 		len(topTracksResp.Toptracks.Track), artistName)
 	return topTracksResp.Toptracks.Track, nil
+}
+
+// GetArtistInfo fetches artist information from Last.fm
+func (s *Service) GetArtistInfo(artistName string) (*ArtistInfoResponse, error) {
+	log.Printf("[LastFM] Requesting artist info from Last.fm for artist: %s", artistName)
+
+	// Build URL with parameters
+	params := url.Values{}
+	params.Add("method", "artist.getInfo")
+	params.Add("artist", artistName)
+	params.Add("api_key", s.apiKey)
+	params.Add("format", "json")
+	params.Add("autocorrect", "1") // Enable name correction
+	params.Add("limit", "20")      // Request more similar artists
+
+	requestURL := fmt.Sprintf("%s?%s", s.baseURL, params.Encode())
+	log.Printf("[LastFM] Making request to URL: %s", requestURL)
+
+	resp, err := s.client.Get(requestURL)
+	if err != nil {
+		log.Printf("[LastFM] Error fetching artist info for %s: %v", artistName, err)
+		return nil, fmt.Errorf("error fetching artist info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	log.Printf("[LastFM] Got response with status code: %d", resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[LastFM] Error reading response body: %v", err)
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	log.Printf("[LastFM] Raw response from Last.fm: %s", string(body))
+
+	var artistInfo ArtistInfoResponse
+	if err := json.Unmarshal(body, &artistInfo); err != nil {
+		log.Printf("[LastFM] Error unmarshalling response: %v\nResponse body: %s", err, string(body))
+		return nil, fmt.Errorf("error parsing response: %w", err)
+	}
+
+	if artistInfo.Error != 0 {
+		log.Printf("[LastFM] API returned error %d: %s", artistInfo.Error, artistInfo.Message)
+		return nil, fmt.Errorf("last.fm API error: %s", artistInfo.Message)
+	}
+
+	// Log successful response details
+	log.Printf("[LastFM] Successfully fetched info for artist %s", artistName)
+	log.Printf("[LastFM] Artist MBID: %s", artistInfo.Artist.MBID)
+	log.Printf("[LastFM] Number of similar artists: %d", len(artistInfo.Artist.Similar.Artist))
+
+	// Log similar artists details
+	for i, similar := range artistInfo.Artist.Similar.Artist {
+		log.Printf("[LastFM] Similar artist %d: Name=%s, MBID=%s", i+1, similar.Name, similar.MBID)
+	}
+
+	return &artistInfo, nil
+}
+
+// ArtistSimilarResponse represents the response from Last.fm's artist.getSimilar method
+type ArtistSimilarResponse struct {
+	Error          int    `json:"error,omitempty"`
+	Message        string `json:"message,omitempty"`
+	SimilarArtists struct {
+		Artist []struct {
+			Name  string `json:"name"`
+			MBID  string `json:"mbid"`
+			Match Match  `json:"match"`
+			URL   string `json:"url"`
+			Image []struct {
+				Text string `json:"#text"`
+				Size string `json:"size"`
+			} `json:"image"`
+		} `json:"artist"`
+		Attr struct {
+			Artist string `json:"artist"`
+		} `json:"@attr"`
+	} `json:"similarartists"`
+}
+
+// Match represents a Last.fm match value that can be either a string or a float64
+type Match float64
+
+// UnmarshalJSON implements custom unmarshaling for Match
+func (m *Match) UnmarshalJSON(data []byte) error {
+	// First try to unmarshal as float64
+	var f float64
+	if err := json.Unmarshal(data, &f); err == nil {
+		*m = Match(f)
+		return nil
+	}
+
+	// If that fails, try to unmarshal as string
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	// Convert string to float64
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return err
+	}
+
+	*m = Match(f)
+	return nil
+}
+
+// GetSimilarArtists fetches similar artists from Last.fm with a configurable limit
+func (s *Service) GetSimilarArtists(artistName string, limit int) (*ArtistSimilarResponse, error) {
+	log.Printf("[LastFM] Requesting similar artists for: %s (limit: %d)", artistName, limit)
+
+	// Build URL with parameters
+	params := url.Values{}
+	params.Add("method", "artist.getSimilar")
+	params.Add("artist", artistName)
+	params.Add("api_key", s.apiKey)
+	params.Add("format", "json")
+	params.Add("limit", fmt.Sprintf("%d", limit))
+	params.Add("autocorrect", "1") // Enable name correction
+
+	requestURL := fmt.Sprintf("%s?%s", s.baseURL, params.Encode())
+	log.Printf("[LastFM] Making request to URL: %s", requestURL)
+
+	resp, err := s.client.Get(requestURL)
+	if err != nil {
+		log.Printf("[LastFM] Error fetching similar artists for %s: %v", artistName, err)
+		return nil, fmt.Errorf("error fetching similar artists: %w", err)
+	}
+	defer resp.Body.Close()
+
+	log.Printf("[LastFM] Got response with status code: %d", resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[LastFM] Error reading response body: %v", err)
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	log.Printf("[LastFM] Raw response from Last.fm: %s", string(body))
+
+	var similarArtists ArtistSimilarResponse
+	if err := json.Unmarshal(body, &similarArtists); err != nil {
+		log.Printf("[LastFM] Error unmarshalling response: %v\nResponse body: %s", err, string(body))
+		return nil, fmt.Errorf("error parsing response: %w", err)
+	}
+
+	if similarArtists.Error != 0 {
+		log.Printf("[LastFM] API returned error %d: %s", similarArtists.Error, similarArtists.Message)
+		return nil, fmt.Errorf("last.fm API error: %s", similarArtists.Message)
+	}
+
+	// Log successful response details
+	log.Printf("[LastFM] Successfully fetched %d similar artists for %s",
+		len(similarArtists.SimilarArtists.Artist), artistName)
+
+	// Log each similar artist
+	for i, artist := range similarArtists.SimilarArtists.Artist {
+		log.Printf("[LastFM] Similar artist %d: Name=%s, MBID=%s, Match=%.2f",
+			i+1, artist.Name, artist.MBID, float64(artist.Match))
+	}
+
+	return &similarArtists, nil
 }
