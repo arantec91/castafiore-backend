@@ -11,9 +11,12 @@ import (
 
 const (
 	LastFMAPIURL = "https://ws.audioscrobbler.com/2.0/"
-	// API Key gratuita para desarrollo - en producción debería venir del config
-	APIKey = "YOUR_LASTFM_API_KEY" // TODO: Mover a configuración
 )
+
+// Config holds Last.fm configuration
+type Config struct {
+	APIKey string
+}
 
 type Service struct {
 	client *http.Client
@@ -34,13 +37,13 @@ type SimilarTracksResponse struct {
 }
 
 type Track struct {
-	Name       string `json:"name"`
-	Duration   string `json:"duration,omitempty"`
-	PlayCount  string `json:"playcount,omitempty"`
-	Listeners  string `json:"listeners,omitempty"`
-	Match      string `json:"match"`
-	MBID       string `json:"mbid,omitempty"`
-	URL        string `json:"url"`
+	Name       string  `json:"name"`
+	Duration   int     `json:"duration,omitempty"`
+	PlayCount  int     `json:"playcount,omitempty"`
+	Listeners  int     `json:"listeners,omitempty"`
+	Match      float64 `json:"match"`
+	MBID       string  `json:"mbid,omitempty"`
+	URL        string  `json:"url"`
 	Streamable struct {
 		Text      string `json:"#text"`
 		Fulltrack string `json:"fulltrack"`
@@ -56,16 +59,18 @@ type Track struct {
 	} `json:"image"`
 }
 
-func NewService(apiKey string) *Service {
-	if apiKey == "" {
-		apiKey = APIKey // Fallback a la clave por defecto
+func NewService(config Config) *Service {
+	log.Printf("Initializing Last.fm service with API key: %s...", config.APIKey[:12])
+	if config.APIKey == "" {
+		log.Printf("Warning: Last.fm API key is empty")
+		return nil
 	}
 
 	return &Service{
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-		apiKey: apiKey,
+		apiKey: config.APIKey,
 	}
 }
 
@@ -75,7 +80,7 @@ func (s *Service) GetSimilarTracks(artist, track string, limit int) (*SimilarTra
 		limit = 30 // Default limit
 	}
 
-	log.Printf("DEBUG: Last.fm API Key being used: %s...", s.apiKey[:12]) // Solo mostrar primeros 12 caracteres
+	log.Printf("DEBUG: last.fm API key being used: %s...", s.apiKey[:12])
 
 	params := url.Values{}
 	params.Set("method", "track.getsimilar")
@@ -86,27 +91,27 @@ func (s *Service) GetSimilarTracks(artist, track string, limit int) (*SimilarTra
 	params.Set("limit", fmt.Sprintf("%d", limit))
 
 	requestURL := fmt.Sprintf("%s?%s", LastFMAPIURL, params.Encode())
-	log.Printf("DEBUG: Last.fm request URL: %s", requestURL)
+	log.Printf("DEBUG: last.fm request URL: %s", requestURL)
 
 	resp, err := s.client.Get(requestURL)
 	if err != nil {
-		return nil, fmt.Errorf("error making request to Last.fm: %w", err)
+		return nil, fmt.Errorf("error making request to last.fm: %w", err)
 	}
 	defer resp.Body.Close()
 
-	log.Printf("DEBUG: Last.fm response status: %d", resp.StatusCode)
+	log.Printf("DEBUG: last.fm response status: %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Last.fm API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("last.fm API returned status %d", resp.StatusCode)
 	}
 
 	var lastfmResp LastFMResponse
 	if err := json.NewDecoder(resp.Body).Decode(&lastfmResp); err != nil {
-		return nil, fmt.Errorf("error decoding Last.fm response: %w", err)
+		return nil, fmt.Errorf("error decoding last.fm response: %w", err)
 	}
 
 	if lastfmResp.Error != 0 {
-		return nil, fmt.Errorf("Last.fm API error %d: %s", lastfmResp.Error, lastfmResp.Message)
+		return nil, fmt.Errorf("last.fm API error %d: %s", lastfmResp.Error, lastfmResp.Message)
 	}
 
 	if lastfmResp.SimilarTracks == nil {
@@ -133,12 +138,12 @@ func (s *Service) GetSimilarTracksByArtist(artist string, limit int) (*SimilarTr
 
 	resp, err := s.client.Get(requestURL)
 	if err != nil {
-		return nil, fmt.Errorf("error making request to Last.fm: %w", err)
+		return nil, fmt.Errorf("error making request to last.fm: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Last.fm API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("last.fm API returned status %d", resp.StatusCode)
 	}
 
 	var response struct {
@@ -152,20 +157,18 @@ func (s *Service) GetSimilarTracksByArtist(artist string, limit int) (*SimilarTr
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("error decoding Last.fm response: %w", err)
+		return nil, fmt.Errorf("error decoding last.fm response: %w", err)
 	}
 
 	if response.Error != 0 {
-		return nil, fmt.Errorf("Last.fm API error %d: %s", response.Error, response.Message)
+		return nil, fmt.Errorf("last.fm API error %d: %s", response.Error, response.Message)
 	}
 
-	// Crear una respuesta con artistas similares (sin tracks específicos)
 	result := &SimilarTracksResponse{
 		Track: []Track{},
 	}
 
 	// Por simplicidad, retornamos los nombres de artistas similares
-	// En una implementación más completa, podrías obtener top tracks de cada artista similar
 	for _, artist := range response.SimilarArtists.Artist {
 		track := Track{
 			Name: "", // No tenemos track específico

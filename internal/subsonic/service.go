@@ -7,15 +7,17 @@ import (
 	"net/http"
 
 	"castafiore-backend/internal/auth"
+	"castafiore-backend/internal/config"
 	"castafiore-backend/internal/lastfm"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Service struct {
-	db     *sql.DB
-	auth   *auth.Service
-	lastfm *lastfm.Service
+	db        *sql.DB
+	auth      *auth.Service
+	lastfm    *lastfm.Service
+	musicPath string
 }
 
 // Response structures for Subsonic API
@@ -265,11 +267,12 @@ type User struct {
 	MaxBitRate          int    `xml:"maxBitRate,attr,omitempty" json:"maxBitRate,omitempty"`
 }
 
-func NewService(db *sql.DB, authService *auth.Service, lastfmAPIKey string) *Service {
+func NewService(db *sql.DB, authService *auth.Service, cfg *config.Config) *Service {
 	return &Service{
-		db:     db,
-		auth:   authService,
-		lastfm: lastfm.NewService(lastfmAPIKey),
+		db:        db,
+		auth:      authService,
+		lastfm:    lastfm.NewService(lastfm.Config{APIKey: cfg.LastFMAPIKey}),
+		musicPath: cfg.MusicPath,
 	}
 }
 

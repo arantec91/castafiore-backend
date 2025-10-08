@@ -85,17 +85,26 @@ ANDROID_CLIENT_ENDPOINTS.md
 API_RESPONSE_EXAMPLES.md
 DURATION_BITRATE_FIX.md
 IMPLEMENTATION_SUMMARY.md
-LASTFM_SETUP.md
-OPTIMIZATION_GUIDE.md
 OPTIMIZATION_SUCCESS_REPORT.md
-SCANNER_OPTIMIZATION_README.md
 SCANNER_TRANSACTION_FIX.md
 SEARCH3_IMPLEMENTATION.md
 SIMILAR_SONGS_IMPLEMENTATION.md
 TESTING_GUIDE.md
 TIMEOUT_FIX_README.md
 albums_page_response.html
-test-scanner-fix.go
+
+# Archivos de prueba y debug
+test-*.go
+test-*.html
+check-*.go
+verify-*.go
+debug-*.html
+debug-*.log
+diagnose-*.*
+setup-admin.go
+setup-admin.sql
+create-test-user.go
+auto-login.html
 
 # Docker volumes y datos
 docker-data/

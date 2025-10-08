@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"crypto/sha256"
+	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -65,18 +65,19 @@ func (s *Service) ValidateAdminAuth(db *sql.DB, username, password string) (*Use
 }
 
 // ValidateSubsonicAuth validates Subsonic-style authentication
-func (s *Service) ValidateSubsonicAuth(db *sql.DB, username, password, salt string) (*User, error) {
+func (s *Service) ValidateSubsonicAuth(db *sql.DB, username, token, salt string) (*User, error) {
 	// Get user from database
 	user := &User{}
 	var passwordHash string
+	var subsonicPassword sql.NullString
 
 	query := `
-		SELECT id, username, email, password_hash, subscription_plan, 
+		SELECT id, username, email, password_hash, subsonic_password, subscription_plan, 
 		       max_concurrent_streams, max_downloads_per_day 
 		FROM users WHERE username = $1`
 
 	err := db.QueryRow(query, username).Scan(
-		&user.ID, &user.Username, &user.Email, &passwordHash,
+		&user.ID, &user.Username, &user.Email, &passwordHash, &subsonicPassword,
 		&user.SubscriptionPlan, &user.MaxConcurrentStreams, &user.MaxDownloadsPerDay,
 	)
 
@@ -84,22 +85,30 @@ func (s *Service) ValidateSubsonicAuth(db *sql.DB, username, password, salt stri
 		return nil, fmt.Errorf("user not found")
 	}
 
-	// Validate password using Subsonic method: MD5(password + salt)
-	if salt != "" {
-		// Create MD5 hash of password + salt
-		hasher := sha256.New()
-		hasher.Write([]byte(password + salt))
-		hashedPassword := hex.EncodeToString(hasher.Sum(nil))
+	// Check if subsonic_password is configured
+	if !subsonicPassword.Valid || subsonicPassword.String == "" {
+		return nil, fmt.Errorf("subsonic authentication not configured for this user")
+	}
 
-		// Compare with stored hash
-		if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(hashedPassword)); err != nil {
+	// Validate using Subsonic token-based authentication: token = MD5(password + salt)
+	if salt != "" && token != "" {
+		// Calculate expected token: MD5(password + salt)
+		hasher := md5.New()
+		hasher.Write([]byte(subsonicPassword.String + salt))
+		expectedToken := hex.EncodeToString(hasher.Sum(nil))
+
+		// Compare tokens
+		if token != expectedToken {
+			return nil, fmt.Errorf("invalid token")
+		}
+	} else if token != "" {
+		// Plain password authentication (p parameter instead of t/s)
+		// This is when client sends password directly (enc:)
+		if token != subsonicPassword.String {
 			return nil, fmt.Errorf("invalid password")
 		}
 	} else {
-		// Direct password comparison (for backwards compatibility)
-		if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
-			return nil, fmt.Errorf("invalid password")
-		}
+		return nil, fmt.Errorf("no authentication credentials provided")
 	}
 
 	return user, nil
@@ -138,4 +147,11 @@ func (s *Service) ValidateJWT(tokenString string) (*Claims, error) {
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(bytes), err
+}
+
+// HashPasswordMD5 generates MD5 hash for Subsonic authentication
+func HashPasswordMD5(password string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(password))
+	return hex.EncodeToString(hasher.Sum(nil))
 }

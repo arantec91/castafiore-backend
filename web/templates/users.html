@@ -81,10 +81,11 @@
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-outline-primary" title="Editar">
+                                <a href="/admin/users/{{.ID}}/edit" class="btn btn-outline-primary" title="Editar">
                                     <i class="fas fa-edit"></i>
-                                </button>
-                                <button type="button" class="btn btn-outline-danger" title="Eliminar">
+                                </a>
+                                <button type="button" class="btn btn-outline-danger delete-btn" 
+                                        title="Eliminar" data-user-id="{{.ID}}" data-username="{{.Username}}">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             </div>
@@ -146,32 +147,26 @@
         </div>
     </div>
 </div>
-{{end}}
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Calcular estadísticas de usuarios desde la tabla
-    const rows = document.querySelectorAll('tbody tr');
-    let activeCount = 0, premiumCount = 0, adminCount = 0;
-    
-    rows.forEach(row => {
-        const statusBadge = row.querySelector('td:nth-child(7) .badge');
-        const planBadge = row.querySelector('td:nth-child(3) .badge');
-        const adminBadge = row.querySelector('td:nth-child(6) .badge');
-        
-        if (statusBadge && statusBadge.textContent.trim() === 'Activo') {
-            activeCount++;
-        }
-        if (planBadge && planBadge.textContent.trim() === 'Premium') {
-            premiumCount++;
-        }
-        if (adminBadge && adminBadge.textContent.trim() === 'Sí') {
-            adminCount++;
-        }
-    });
-    
-    document.getElementById('activeUsers').textContent = activeCount;
-    document.getElementById('premiumUsers').textContent = premiumCount;
-    document.getElementById('adminUsers').textContent = adminCount;
-});
-</script>
+<!-- Modal de confirmación para eliminar usuario -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalLabel">Confirmar Eliminación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro de que deseas eliminar al usuario <strong id="deleteUsername"></strong>?</p>
+                <p class="text-danger"><small>Esta acción no se puede deshacer.</small></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form id="deleteForm" method="post" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">Eliminar Usuario</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

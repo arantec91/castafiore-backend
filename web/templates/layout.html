@@ -144,6 +144,8 @@
                     {{template "users" .}}
                 {{else if eq .template "create_user"}}
                     {{template "create_user" .}}
+                {{else if eq .template "edit_user"}}
+                    {{template "edit_user" .}}
                 {{else if eq .template "music_browser"}}
                     {{template "music_browser" .}}
                 {{else if eq .template "settings"}}
@@ -160,6 +162,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        console.log('🔥 Layout.html script cargado');
+        
         // Función para actualizar estadísticas en tiempo real
         function updateStats() {
             fetch('/admin/api/stats')
@@ -178,6 +182,7 @@
 
         // Marcar enlace activo en sidebar
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('✅ DOMContentLoaded en layout.html');
             const currentPath = window.location.pathname;
             const navLinks = document.querySelectorAll('.nav-link');
             
@@ -186,7 +191,117 @@
                     link.classList.add('active');
                 }
             });
+            
+            // Inicializar gestión de usuarios si estamos en la página de usuarios
+            if (currentPath === '/admin/users') {
+                console.log('🎯 Estamos en la página de usuarios, inicializando...');
+                setTimeout(initUserManagement, 100);
+            }
         });
+        
+        // ========== GESTIÓN DE USUARIOS ==========
+        function initUserManagement() {
+            console.log('=== Inicializando gestión de usuarios ===');
+            console.log('Bootstrap disponible:', typeof bootstrap !== 'undefined');
+            console.log('Estado del documento:', document.readyState);
+            
+            // Calcular estadísticas de usuarios desde la tabla
+            calculateUserStats();
+            
+            // Configurar event listeners para botones de eliminar
+            setupDeleteButtons();
+        }
+
+        function calculateUserStats() {
+            const rows = document.querySelectorAll('tbody tr');
+            console.log('📊 Calculando estadísticas - Filas encontradas:', rows.length);
+            let activeCount = 0, premiumCount = 0, adminCount = 0;
+            
+            rows.forEach(row => {
+                const statusBadge = row.querySelector('td:nth-child(7) .badge');
+                const planBadge = row.querySelector('td:nth-child(3) .badge');
+                const adminBadge = row.querySelector('td:nth-child(6) .badge');
+                
+                if (statusBadge && statusBadge.textContent.trim() === 'Activo') {
+                    activeCount++;
+                }
+                if (planBadge && planBadge.textContent.trim() === 'Premium') {
+                    premiumCount++;
+                }
+                if (adminBadge && adminBadge.textContent.trim() === 'Sí') {
+                    adminCount++;
+                }
+            });
+            
+            const activeUsersEl = document.getElementById('activeUsers');
+            const premiumUsersEl = document.getElementById('premiumUsers');
+            const adminUsersEl = document.getElementById('adminUsers');
+            
+            if (activeUsersEl) activeUsersEl.textContent = activeCount;
+            if (premiumUsersEl) premiumUsersEl.textContent = premiumCount;
+            if (adminUsersEl) adminUsersEl.textContent = adminCount;
+            
+            console.log('✅ Estadísticas calculadas - Activos:', activeCount, 'Premium:', premiumCount, 'Admins:', adminCount);
+        }
+
+        function setupDeleteButtons() {
+            const deleteButtons = document.querySelectorAll('.delete-btn');
+            console.log('🗑️ Botones de eliminar encontrados:', deleteButtons.length);
+            
+            if (deleteButtons.length === 0) {
+                console.warn('⚠️ No se encontraron botones con clase .delete-btn');
+                const allButtons = document.querySelectorAll('button');
+                console.log('Total de botones en la página:', allButtons.length);
+            }
+            
+            deleteButtons.forEach((button, index) => {
+                const userId = button.getAttribute('data-user-id');
+                const username = button.getAttribute('data-username');
+                console.log(`  Botón ${index + 1}: userId=${userId}, username=${username}`);
+                
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🖱️ CLICK en botón eliminar - Usuario:', userId, username);
+                    confirmDelete(userId, username);
+                });
+            });
+        }
+
+        function confirmDelete(userId, username) {
+            console.log('=== confirmDelete llamado ===');
+            console.log('userId:', userId);
+            console.log('username:', username);
+            
+            const deleteUsernameEl = document.getElementById('deleteUsername');
+            const deleteFormEl = document.getElementById('deleteForm');
+            const deleteModalEl = document.getElementById('deleteModal');
+            
+            console.log('deleteUsernameEl:', deleteUsernameEl);
+            console.log('deleteFormEl:', deleteFormEl);
+            console.log('deleteModalEl:', deleteModalEl);
+            
+            if (!deleteUsernameEl || !deleteFormEl || !deleteModalEl) {
+                console.error('❌ ERROR: Elementos del modal no encontrados');
+                alert('Error: No se pudo encontrar el modal de confirmación');
+                return;
+            }
+            
+            deleteUsernameEl.textContent = username;
+            deleteFormEl.action = '/admin/users/' + userId + '/delete';
+            console.log('✅ Action del formulario configurado:', deleteFormEl.action);
+            
+            if (typeof bootstrap === 'undefined') {
+                console.error('❌ ERROR: Bootstrap no está cargado');
+                alert('Error: Bootstrap no está cargado. Por favor, recarga la página.');
+                return;
+            }
+            
+            console.log('📦 Mostrando modal...');
+            const deleteModal = new bootstrap.Modal(deleteModalEl);
+            deleteModal.show();
+            console.log('✅ Modal mostrado');
+        }
     </script>
 </body>
 </html>

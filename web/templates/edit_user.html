@@ -1,0 +1,147 @@
+{{define "edit_user"}}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h4 mb-0">Editar Usuario</h1>
+        <p class="text-muted">Modifica la información del usuario</p>
+    </div>
+    <a href="/admin/users" class="btn btn-secondary">
+        <i class="fas fa-arrow-left me-2"></i>Volver
+    </a>
+</div>
+
+{{if .error}}
+<div class="alert alert-danger" role="alert">
+    <i class="fas fa-exclamation-circle me-2"></i>{{.error}}
+</div>
+{{end}}
+
+{{if .success}}
+<div class="alert alert-success" role="alert">
+    <i class="fas fa-check-circle me-2"></i>{{.success}}
+</div>
+{{end}}
+
+<div class="card">
+    <div class="card-header">
+        <i class="fas fa-user-edit me-2"></i>
+        Información del Usuario: {{.user.Username}}
+    </div>
+    <div class="card-body">
+        <form method="post" action="/admin/users/{{.user.ID}}/edit">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Nombre de Usuario</label>
+                        <input type="text" class="form-control" id="username" name="username" 
+                               value="{{.user.Username}}" required>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" 
+                               value="{{.user.Email}}" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="subscription_plan" class="form-label">Plan de Suscripción</label>
+                        <select class="form-select" id="subscription_plan" name="subscription_plan" required>
+                            <option value="free" {{if eq .user.SubscriptionPlan "free"}}selected{{end}}>Free</option>
+                            <option value="premium" {{if eq .user.SubscriptionPlan "premium"}}selected{{end}}>Premium</option>
+                            <option value="pro" {{if eq .user.SubscriptionPlan "pro"}}selected{{end}}>Pro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Nueva Contraseña (opcional)</label>
+                        <input type="password" class="form-control" id="password" name="password" 
+                               placeholder="Dejar vacío para mantener la actual">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="max_concurrent_streams" class="form-label">Streams Concurrentes</label>
+                        <input type="number" class="form-control" id="max_concurrent_streams" 
+                               name="max_concurrent_streams" value="{{.user.MaxConcurrentStreams}}" 
+                               min="1" max="50" required>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="max_downloads_per_day" class="form-label">Descargas por Día</label>
+                        <input type="number" class="form-control" id="max_downloads_per_day" 
+                               name="max_downloads_per_day" value="{{.user.MaxDownloadsPerDay}}" 
+                               min="1" max="10000" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="is_admin" 
+                                   name="is_admin" {{if .user.IsAdmin}}checked{{end}}>
+                            <label class="form-check-label" for="is_admin">
+                                Es Administrador
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="is_active" 
+                                   name="is_active" {{if .user.IsActive}}checked{{end}}>
+                            <label class="form-check-label" for="is_active">
+                                Usuario Activo
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save me-2"></i>Guardar Cambios
+                </button>
+                <a href="/admin/users" class="btn btn-secondary">
+                    <i class="fas fa-times me-2"></i>Cancelar
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('subscription_plan').addEventListener('change', function() {
+    const plan = this.value;
+    const streamsInput = document.getElementById('max_concurrent_streams');
+    const downloadsInput = document.getElementById('max_downloads_per_day');
+    
+    switch (plan) {
+        case 'premium':
+            streamsInput.value = 10;
+            downloadsInput.value = 1000;
+            break;
+        case 'pro':
+            streamsInput.value = 5;
+            downloadsInput.value = 100;
+            break;
+        default: // free
+            streamsInput.value = 1;
+            downloadsInput.value = 10;
+            break;
+    }
+});
+</script>
+
+{{end}}

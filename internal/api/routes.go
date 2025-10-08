@@ -27,7 +27,7 @@ func SetupRoutes(router *gin.Engine, authService *auth.Service, db *sql.DB, cfg 
 	router.SetHTMLTemplate(tmpl)
 
 	// Create subsonic service
-	subsonicService := subsonic.NewService(db, authService, cfg.LastFMAPIKey)
+	subsonicService := subsonic.NewService(db, authService, cfg)
 
 	// Create web controller
 	webController := web.NewWebController(db, authService, cfg)
@@ -42,6 +42,9 @@ func SetupRoutes(router *gin.Engine, authService *auth.Service, db *sql.DB, cfg 
 		c.Redirect(http.StatusFound, "/admin")
 	})
 
+	// Static files
+	router.Static("/static", "./static")
+
 	// Web Admin Interface (with authentication middleware)
 	admin := router.Group("/admin")
 	admin.Use(webController.AuthMiddleware())
@@ -51,6 +54,9 @@ func SetupRoutes(router *gin.Engine, authService *auth.Service, db *sql.DB, cfg 
 		admin.GET("/users", webController.Users)
 		admin.GET("/users/create", webController.CreateUserForm)
 		admin.POST("/users/create", webController.CreateUser)
+		admin.GET("/users/:id/edit", webController.EditUserForm)
+		admin.POST("/users/:id/edit", webController.EditUser)
+		admin.POST("/users/:id/delete", webController.DeleteUser)
 		admin.GET("/music", webController.MusicBrowser)
 		admin.GET("/music/search", webController.SearchMusic)
 		admin.GET("/settings", webController.Settings)
@@ -68,10 +74,11 @@ func SetupRoutes(router *gin.Engine, authService *auth.Service, db *sql.DB, cfg 
 	rest := router.Group("/rest")
 	{
 		// System endpoints (both with and without .view suffix)
-		rest.GET("/ping", subsonicService.Ping)
-		rest.GET("/ping.view", subsonicService.Ping)
-		rest.GET("/getLicense", subsonicService.GetLicense)
-		rest.GET("/getLicense.view", subsonicService.GetLicense)
+		// Note: Subsonic spec says ping/getLicense don't require auth, but we enforce it for security
+		rest.GET("/ping", subsonicService.AuthMiddleware(), subsonicService.Ping)
+		rest.GET("/ping.view", subsonicService.AuthMiddleware(), subsonicService.Ping)
+		rest.GET("/getLicense", subsonicService.AuthMiddleware(), subsonicService.GetLicense)
+		rest.GET("/getLicense.view", subsonicService.AuthMiddleware(), subsonicService.GetLicense)
 		rest.GET("/getMusicFolders", subsonicService.AuthMiddleware(), subsonicService.GetMusicFolders)
 		rest.GET("/getMusicFolders.view", subsonicService.AuthMiddleware(), subsonicService.GetMusicFolders)
 
@@ -133,10 +140,10 @@ func SetupRoutes(router *gin.Engine, authService *auth.Service, db *sql.DB, cfg 
 		rest.GET("/deletePlaylist.view", subsonicService.AuthMiddleware(), subsonicService.DeletePlaylist)
 
 		// Media retrieval (both with and without .view suffix)
-		// rest.GET("/stream", subsonicService.AuthMiddleware(), subsonicService.Stream) // TODO: Implement Stream method
-		// rest.GET("/stream.view", subsonicService.AuthMiddleware(), subsonicService.Stream) // TODO: Implement Stream method
-		// rest.GET("/download", subsonicService.AuthMiddleware(), subsonicService.Download) // TODO: Implement Download method
-		// rest.GET("/download.view", subsonicService.AuthMiddleware(), subsonicService.Download) // TODO: Implement Download method
+		rest.GET("/stream", subsonicService.AuthMiddleware(), subsonicService.Stream)
+		rest.GET("/stream.view", subsonicService.AuthMiddleware(), subsonicService.Stream)
+		rest.GET("/download", subsonicService.AuthMiddleware(), subsonicService.Download)
+		rest.GET("/download.view", subsonicService.AuthMiddleware(), subsonicService.Download)
 		rest.GET("/getCoverArt", subsonicService.AuthMiddleware(), subsonicService.GetCoverArt)
 		rest.GET("/getCoverArt.view", subsonicService.AuthMiddleware(), subsonicService.GetCoverArt)
 		rest.GET("/getLyrics", subsonicService.AuthMiddleware(), subsonicService.GetLyrics)
@@ -176,6 +183,15 @@ func SetupRoutes(router *gin.Engine, authService *auth.Service, db *sql.DB, cfg 
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "healthy",
 			"service": "castafiore-backend",
+		})
+	})
+
+	// Debug routes endpoint
+	router.GET("/debug/routes", func(c *gin.Context) {
+		routes := router.Routes()
+		c.JSON(http.StatusOK, gin.H{
+			"total_routes": len(routes),
+			"routes":       routes,
 		})
 	})
 

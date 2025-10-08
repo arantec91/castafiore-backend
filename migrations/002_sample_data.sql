@@ -1,11 +1,12 @@
 -- Insertar datos de ejemplo para desarrollo
 
 -- Insertar usuario administrador por defecto
-INSERT INTO users (username, email, password_hash, subscription_plan, max_concurrent_streams, max_downloads_per_day, is_admin, is_active) 
+INSERT INTO users (username, email, password_hash, subsonic_password, subscription_plan, max_concurrent_streams, max_downloads_per_day, is_admin, is_active) 
 VALUES (
     'admin', 
     'admin@castafiore.local', 
     '$2a$10$ij8kedkoiIMhliknzaVswexWxGVzpKXBhqK.d24.CeZk0t1q8ZM/e', -- admin123
+    'admin123', -- Subsonic password (plain text for MD5 token generation)
     'premium',
     10,
     1000,
@@ -13,6 +14,7 @@ VALUES (
     TRUE
 ) ON CONFLICT (username) DO UPDATE SET 
     password_hash = EXCLUDED.password_hash,
+    subsonic_password = EXCLUDED.subsonic_password,
     is_admin = TRUE,
     is_active = TRUE;
 

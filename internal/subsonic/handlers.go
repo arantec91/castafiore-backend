@@ -1128,19 +1128,21 @@ func (s *Service) GetStarred2(c *gin.Context) {
 		}
 	}
 
-	// Get starred albums (ID3 format)
+	// Get starred albums (ID3 format) - includes directly starred albums and albums with starred songs
 	log.Printf("GetStarred2: Fetching starred albums for user %d", userId)
 	albumRows, err := s.db.Query(`
-		SELECT al.id, al.name, al.artist_id, ar.name as artist_name, 
+		SELECT DISTINCT al.id, al.name, al.artist_id, ar.name as artist_name, 
 		       al.year, al.genre, al.created_at, al.cover_art_path,
-		       COUNT(s.id) as song_count, COALESCE(SUM(s.duration), 0) as total_duration
-		FROM starred_albums sa
-		JOIN albums al ON sa.album_id = al.id
+		       COUNT(s.id) as song_count, COALESCE(SUM(s.duration), 0) as total_duration,
+		       COALESCE(sa.starred_at, MIN(ss.starred_at)) as starred_at
+		FROM albums al
 		JOIN artists ar ON al.artist_id = ar.id
 		LEFT JOIN songs s ON al.id = s.album_id
-		WHERE sa.user_id = $1
-		GROUP BY al.id, al.name, al.artist_id, ar.name, al.year, al.genre, al.created_at, al.cover_art_path
-		ORDER BY sa.starred_at DESC
+		LEFT JOIN starred_albums sa ON sa.album_id = al.id AND sa.user_id = $1
+		LEFT JOIN starred_songs ss ON ss.song_id = s.id AND ss.user_id = $1
+		WHERE sa.user_id = $1 OR ss.user_id = $1
+		GROUP BY al.id, al.name, al.artist_id, ar.name, al.year, al.genre, al.created_at, al.cover_art_path, sa.starred_at
+		ORDER BY starred_at DESC
 	`, userId)
 
 	if err != nil {
@@ -1153,9 +1155,10 @@ func (s *Service) GetStarred2(c *gin.Context) {
 			var year *int
 			var genre *string
 			var coverArtPath *string
+			var starredAt time.Time
 
 			if err := albumRows.Scan(&album.ID, &album.Name, &album.ArtistID, &album.Artist,
-				&year, &genre, &createdAt, &coverArtPath, &album.SongCount, &album.Duration); err == nil {
+				&year, &genre, &createdAt, &coverArtPath, &album.SongCount, &album.Duration, &starredAt); err == nil {
 				album.Created = createdAt.Format("2006-01-02T15:04:05Z")
 				if year != nil {
 					album.Year = *year
@@ -1217,6 +1220,9 @@ func (s *Service) Search3(c *gin.Context) {
 	// For future use when implementing multiple music folders
 	_ = c.Query("musicFolderId")
 
+	log.Printf("Search3: query='%s', artistCount=%d, albumCount=%d, songCount=%d",
+		query, artistCount, albumCount, songCount)
+
 	result := &SearchResult3{
 		Artist: []ArtistID3{},
 		Album:  []AlbumID3{},
@@ -1231,6 +1237,8 @@ func (s *Service) Search3(c *gin.Context) {
 		searchTerm = "%" + strings.ToLower(query) + "%"
 	}
 
+	log.Printf("Search3: searchTerm='%s'", searchTerm)
+
 	// Search artists - solo buscar si se solicitan artistas
 	if artistCount > 0 {
 		artistQuery := `
@@ -1243,18 +1251,23 @@ func (s *Service) Search3(c *gin.Context) {
 			LIMIT $2 OFFSET $3`
 
 		rows, err := s.db.Query(artistQuery, searchTerm, artistCount, artistOffset)
-		if err == nil {
+		if err != nil {
+			log.Printf("Search3: Error querying artists: %v", err)
+		} else {
 			defer rows.Close()
 			for rows.Next() {
 				var artist ArtistID3
 				var albumCount int
 				err := rows.Scan(&artist.ID, &artist.Name, &albumCount)
-				if err == nil {
+				if err != nil {
+					log.Printf("Search3: Error scanning artist: %v", err)
+				} else {
 					artist.AlbumCount = albumCount
 					result.Artist = append(result.Artist, artist)
 				}
 			}
 			rows.Close()
+			log.Printf("Search3: Found %d artists", len(result.Artist))
 		}
 	}
 
@@ -1275,7 +1288,9 @@ func (s *Service) Search3(c *gin.Context) {
 			LIMIT $2 OFFSET $3`
 
 		rows, err := s.db.Query(albumQuery, searchTerm, albumCount, albumOffset)
-		if err == nil {
+		if err != nil {
+			log.Printf("Search3: Error querying albums: %v", err)
+		} else {
 			defer rows.Close()
 			for rows.Next() {
 				var album AlbumID3
@@ -1290,7 +1305,9 @@ func (s *Service) Search3(c *gin.Context) {
 					&album.ID, &album.Name, &album.ArtistID, &year, &genre, &createdAt,
 					&artistName, &songCount, &totalDuration, &coverArtPath,
 				)
-				if err == nil {
+				if err != nil {
+					log.Printf("Search3: Error scanning album: %v", err)
+				} else {
 					album.Artist = artistName
 					album.SongCount = songCount
 					album.Duration = totalDuration
@@ -1312,8 +1329,11 @@ func (s *Service) Search3(c *gin.Context) {
 				}
 			}
 			rows.Close()
+			log.Printf("Search3: Found %d albums", len(result.Album))
 		}
-	} // Search songs - solo buscar si se solicitan canciones
+	}
+
+	// Search songs - solo buscar si se solicitan canciones
 	if songCount > 0 {
 		songQuery := `
 				SELECT s.id, s.title, s.track_number, s.duration, s.file_path, 
@@ -1327,7 +1347,9 @@ func (s *Service) Search3(c *gin.Context) {
 				LIMIT $2 OFFSET $3`
 
 		rows, err := s.db.Query(songQuery, searchTerm, songCount, songOffset)
-		if err == nil {
+		if err != nil {
+			log.Printf("Search3: Error querying songs: %v", err)
+		} else {
 			defer rows.Close()
 			for rows.Next() {
 				var song Child
@@ -1343,7 +1365,9 @@ func (s *Service) Search3(c *gin.Context) {
 					&song.Path, &song.Size, &song.BitRate, &song.Suffix, &albumID,
 					&artistName, &albumName, &year, &genre, &coverArtPath,
 				)
-				if err == nil {
+				if err != nil {
+					log.Printf("Search3: Error scanning song: %v", err)
+				} else {
 					// Convert albumID to string for Parent field
 					song.Parent = strconv.Itoa(albumID)
 					song.AlbumId = strconv.Itoa(albumID) // Add explicit albumId field
@@ -1385,9 +1409,12 @@ func (s *Service) Search3(c *gin.Context) {
 				}
 			}
 			rows.Close()
+			log.Printf("Search3: Found %d songs", len(result.Song))
 		}
 	}
 
+	log.Printf("Search3: Returning %d artists, %d albums, %d songs",
+		len(result.Artist), len(result.Album), len(result.Song))
 	s.sendResponse(c, result)
 }
 
@@ -2228,9 +2255,15 @@ func parseIntDefault(s string, defaultValue int) int {
 
 // GetSimilarSongs2 returns songs similar to the given song using Last.fm API
 func (s *Service) GetSimilarSongs2(c *gin.Context) {
+	// Get user ID for logging
+	userID := s.getUserID(c)
+	username := c.GetString("username")
+	log.Printf("GetSimilarSongs2: Request from user %s (ID: %d)", username, userID)
+
 	// Get parameters
 	id := c.Query("id")
 	if id == "" {
+		log.Printf("GetSimilarSongs2: Missing ID parameter")
 		s.sendError(c, 10, "Required parameter 'id' is missing")
 		return
 	}
@@ -2251,12 +2284,15 @@ func (s *Service) GetSimilarSongs2(c *gin.Context) {
 		JOIN artists ar ON s.artist_id = ar.id
 		WHERE s.id = $1`
 
+	log.Printf("GetSimilarSongs2: Looking up song ID %s in database", id)
 	err := s.db.QueryRow(query, id).Scan(&songTitle, &artistName, &albumId)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("GetSimilarSongs2: Song ID %s not found in database", id)
 			s.sendError(c, 70, "Song not found")
 			return
 		}
+		log.Printf("GetSimilarSongs2: Database error: %v", err)
 		s.sendError(c, 0, "Database error")
 		return
 	}
@@ -2264,22 +2300,22 @@ func (s *Service) GetSimilarSongs2(c *gin.Context) {
 	var songs []Child
 
 	// Debug logging
-	log.Printf("DEBUG: Looking for similar songs to: %s - %s (ID: %s)", artistName, songTitle, id)
+	log.Printf("GetSimilarSongs2: Found song in database: %s - %s (Album ID: %d)", artistName, songTitle, albumId)
 
 	// Try to get similar songs from Last.fm
 	if s.lastfm != nil {
-		log.Printf("DEBUG: Trying Last.fm API...")
+		log.Printf("GetSimilarSongs2: Requesting similar tracks from Last.fm for %s - %s", artistName, songTitle)
 		similarTracks, err := s.lastfm.GetSimilarTracks(artistName, songTitle, size)
 		if err == nil && len(similarTracks.Track) > 0 {
-			log.Printf("DEBUG: Last.fm returned %d similar tracks", len(similarTracks.Track))
+			log.Printf("GetSimilarSongs2: Last.fm returned %d similar tracks", len(similarTracks.Track))
 			// Convert Last.fm tracks to local songs
 			songs = s.findLocalSongsFromLastFM(similarTracks.Track, size)
-			log.Printf("DEBUG: Found %d local matches from Last.fm", len(songs))
+			log.Printf("GetSimilarSongs2: Found %d local matches from Last.fm recommendations", len(songs))
 		} else {
-			log.Printf("DEBUG: Last.fm error or no results: %v", err)
+			log.Printf("GetSimilarSongs2: Last.fm error or no results: %v", err)
 		}
 	} else {
-		log.Printf("DEBUG: Last.fm service not available")
+		log.Printf("GetSimilarSongs2: Last.fm service not initialized")
 	}
 
 	// If we don't have enough songs from Last.fm, use fallback strategy
@@ -2289,61 +2325,120 @@ func (s *Service) GetSimilarSongs2(c *gin.Context) {
 	}
 
 	if len(songs) < minSongs {
-		log.Printf("DEBUG: Using fallback strategies (current: %d, min needed: %d)", len(songs), minSongs)
+		log.Printf("GetSimilarSongs2: Using fallback strategy (current: %d, min needed: %d)", len(songs), minSongs)
 		fallbackSongs := s.getFallbackSimilarSongs(artistName, albumId, size-len(songs), id)
-		log.Printf("DEBUG: Fallback found %d songs", len(fallbackSongs))
+		log.Printf("GetSimilarSongs2: Fallback found %d additional songs", len(fallbackSongs))
 		songs = append(songs, fallbackSongs...)
 	}
 
-	log.Printf("DEBUG: Final result: %d songs", len(songs))
+	log.Printf("GetSimilarSongs2: Final result contains %d songs", len(songs))
 
 	// Limit results to requested size
 	if len(songs) > size {
 		songs = songs[:size]
 	}
 
-	log.Printf("DEBUG: Creating SimilarSongs2 response with %d songs", len(songs))
-
 	result := &SimilarSongs2{
 		Song: songs,
 	}
 
-	log.Printf("DEBUG: About to send response with %d songs in result.Song", len(result.Song))
 	s.sendResponse(c, result)
 }
 
 // findLocalSongsFromLastFM tries to find local songs matching Last.fm recommendations
 func (s *Service) findLocalSongsFromLastFM(lastfmTracks []lastfm.Track, limit int) []Child {
 	var songs []Child
+	processedTracks := make(map[string]bool) // To avoid duplicates
 
 	for _, track := range lastfmTracks {
 		if len(songs) >= limit {
 			break
 		}
 
-		// Try to find the song in our database
-		query := `
+		// Normalize title and artist for better matching
+		normalizedTitle := strings.ToLower(strings.TrimSpace(track.Name))
+		normalizedArtist := strings.ToLower(strings.TrimSpace(track.Artist.Name))
+
+		// Generate a unique key for this combination
+		trackKey := fmt.Sprintf("%s-%s", normalizedArtist, normalizedTitle)
+
+		// Avoid processing the same song more than once
+		if processedTracks[trackKey] {
+			continue
+		}
+		processedTracks[trackKey] = true
+
+		// Split title and artist into words for flexible search
+		titleWords := strings.Fields(normalizedTitle)
+		artistWords := strings.Fields(normalizedArtist)
+
+		// Build the dynamic query
+		queryBuilder := strings.Builder{}
+		queryBuilder.WriteString(`
 			SELECT s.id, s.title, s.track_number, s.duration, s.file_path, 
 			       s.file_size, s.bitrate, s.format, s.album_id,
 			       ar.name as artist_name, al.name as album_name, al.year, al.genre, al.cover_art_path
 			FROM songs s
 			JOIN artists ar ON s.artist_id = ar.id
 			JOIN albums al ON s.album_id = al.id
-			WHERE LOWER(s.title) LIKE LOWER($1) AND LOWER(ar.name) LIKE LOWER($2)
-			LIMIT 1`
+			WHERE 1=1`)
 
-		var song Child
-		var coverArtPath sql.NullString
-		var year sql.NullInt32
-		var genre sql.NullString
+		args := []interface{}{normalizedTitle, normalizedArtist} // Base parameters for final order clause
+		paramCount := 3                                          // Starting from 3 since 1 and 2 are reserved for order clause
 
-		err := s.db.QueryRow(query, "%"+track.Name+"%", "%"+track.Artist.Name+"%").Scan(
-			&song.ID, &song.Title, &song.Track, &song.Duration, &song.Path,
-			&song.Size, &song.BitRate, &song.Suffix, &song.AlbumId,
-			&song.Artist, &song.Album, &year, &genre, &coverArtPath,
-		)
+		// Add conditions for each title word
+		for _, word := range titleWords {
+			if len(word) > 2 { // Ignore very short words
+				queryBuilder.WriteString(fmt.Sprintf(" AND LOWER(s.title) LIKE $%d", paramCount))
+				args = append(args, "%"+word+"%")
+				paramCount++
+			}
+		}
 
-		if err == nil {
+		// Add conditions for each artist word
+		for _, word := range artistWords {
+			if len(word) > 2 { // Ignore very short words
+				queryBuilder.WriteString(fmt.Sprintf(" AND LOWER(ar.name) LIKE $%d", paramCount))
+				args = append(args, "%"+word+"%")
+				paramCount++
+			}
+		}
+
+		// Add order clause using the first two parameters
+		queryBuilder.WriteString(`
+			ORDER BY 
+				CASE WHEN LOWER(s.title) = LOWER($1) THEN 3
+					 WHEN LOWER(s.title) LIKE LOWER($1) THEN 2
+					 ELSE 1 END +
+				CASE WHEN LOWER(ar.name) = LOWER($2) THEN 3
+					 WHEN LOWER(ar.name) LIKE LOWER($2) THEN 2
+					 ELSE 1 END DESC
+			LIMIT 3`)
+
+		rows, err := s.db.Query(queryBuilder.String(), args...)
+		if err != nil {
+			log.Printf("Error searching for similar song '%s - %s': %v", track.Artist.Name, track.Name, err)
+			continue
+		}
+
+		matchFound := false
+		for rows.Next() {
+			var song Child
+			var coverArtPath sql.NullString
+			var year sql.NullInt32
+			var genre sql.NullString
+
+			err := rows.Scan(
+				&song.ID, &song.Title, &song.Track, &song.Duration, &song.Path,
+				&song.Size, &song.BitRate, &song.Suffix, &song.AlbumId,
+				&song.Artist, &song.Album, &year, &genre, &coverArtPath,
+			)
+
+			if err != nil {
+				log.Printf("Error scanning song result: %v", err)
+				continue
+			}
+
 			song.IsDir = false
 			if year.Valid {
 				song.Year = int(year.Int32)
@@ -2356,6 +2451,15 @@ func (s *Service) findLocalSongsFromLastFM(lastfmTracks []lastfm.Track, limit in
 			}
 
 			songs = append(songs, song)
+			matchFound = true
+			break // Take only the first match of the best 3
+		}
+		rows.Close()
+
+		if matchFound {
+			log.Printf("Found local match for '%s - %s'", track.Artist.Name, track.Name)
+		} else {
+			log.Printf("No local match found for '%s - %s'", track.Artist.Name, track.Name)
 		}
 	}
 
@@ -2461,4 +2565,219 @@ func (s *Service) scanSongs(rows *sql.Rows) []Child {
 	}
 
 	return songs
+}
+
+// Stream - Streams a given media file
+func (s *Service) Stream(c *gin.Context) {
+	id := c.Query("id")
+	if !s.isValidID(id) {
+		s.sendError(c, 10, "Required parameter 'id' is missing or invalid")
+		return
+	}
+
+	// Get song information from database
+	var filePath string
+	var contentType string
+	var fileSize int64
+
+	err := s.db.QueryRow(`
+		SELECT file_path, format, file_size
+		FROM songs
+		WHERE id = $1
+	`, id).Scan(&filePath, &contentType, &fileSize)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			s.sendError(c, 70, "Song not found")
+		} else {
+			log.Printf("Database error: %v", err)
+			s.sendError(c, 0, "Database error")
+		}
+		return
+	}
+
+	// Handle file path
+	var fullPath string
+	if filepath.IsAbs(filePath) {
+		// If the path in the database is absolute, use it directly
+		fullPath = filePath
+	} else {
+		// If the path is relative, join it with the music path
+		fullPath = filepath.Join(s.musicPath, filePath)
+	}
+
+	// Log paths for debugging
+	log.Printf("Debug - Stream Request:")
+	log.Printf("Song ID: %s", id)
+	log.Printf("DB File Path: %s", filePath)
+	log.Printf("Music Path: %s", s.musicPath)
+	log.Printf("Full Path: %s", fullPath)
+
+	// Check if file exists
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		log.Printf("File not found: %s", fullPath)
+		s.sendError(c, 70, "Media file not found")
+		return
+	}
+
+	// Determine content type based on format
+	mimeType := "audio/mpeg"
+	switch strings.ToLower(contentType) {
+	case "mp3":
+		mimeType = "audio/mpeg"
+	case "flac":
+		mimeType = "audio/flac"
+	case "ogg":
+		mimeType = "audio/ogg"
+	case "m4a", "aac":
+		mimeType = "audio/mp4"
+	case "wav":
+		mimeType = "audio/wav"
+	case "opus":
+		mimeType = "audio/opus"
+	}
+
+	// Set headers for streaming
+	c.Header("Content-Type", mimeType)
+	c.Header("Content-Length", strconv.FormatInt(fileSize, 10))
+	c.Header("Accept-Ranges", "bytes")
+
+	// Serve the file
+	c.File(fullPath)
+
+	log.Printf("Streaming song ID %s to user %s", id, c.GetString("username"))
+}
+
+// Download - Downloads a given media file
+func (s *Service) Download(c *gin.Context) {
+	id := c.Query("id")
+	if !s.isValidID(id) {
+		s.sendError(c, 10, "Required parameter 'id' is missing or invalid")
+		return
+	}
+
+	userID, exists := c.Get("userID")
+	if !exists {
+		s.sendError(c, 40, "User not authenticated")
+		return
+	}
+
+	// Check download limits
+	var downloadCount int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM downloads
+		WHERE user_id = $1 AND downloaded_at >= CURRENT_DATE
+	`, userID).Scan(&downloadCount)
+
+	if err != nil {
+		log.Printf("Error checking download count: %v", err)
+		s.sendError(c, 0, "Database error")
+		return
+	}
+
+	// Get user's download limit
+	var maxDownloads int
+	err = s.db.QueryRow(`
+		SELECT max_downloads_per_day
+		FROM users
+		WHERE id = $1
+	`, userID).Scan(&maxDownloads)
+
+	if err != nil {
+		log.Printf("Error getting user download limit: %v", err)
+		s.sendError(c, 0, "Database error")
+		return
+	}
+
+	// Check if user has exceeded download limit
+	if downloadCount >= maxDownloads {
+		s.sendError(c, 50, "Download limit exceeded")
+		return
+	}
+
+	// Get song information from database
+	var filePath string
+	var fileName string
+	var contentType string
+	var fileSize int64
+
+	err = s.db.QueryRow(`
+		SELECT s.file_path, s.title, s.format, s.file_size
+		FROM songs s
+		WHERE s.id = $1
+	`, id).Scan(&filePath, &fileName, &contentType, &fileSize)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			s.sendError(c, 70, "Song not found")
+		} else {
+			log.Printf("Database error: %v", err)
+			s.sendError(c, 0, "Database error")
+		}
+		return
+	}
+
+	// Handle file path
+	var fullPath string
+	if filepath.IsAbs(filePath) {
+		// If the path in the database is absolute, use it directly
+		fullPath = filePath
+	} else {
+		// If the path is relative, join it with the music path
+		fullPath = filepath.Join(s.musicPath, filePath)
+	}
+
+	// Log paths for debugging
+	log.Printf("Debug - Download Request:")
+	log.Printf("Song ID: %s", id)
+	log.Printf("DB File Path: %s", filePath)
+	log.Printf("Music Path: %s", s.musicPath)
+	log.Printf("Full Path: %s", fullPath)
+
+	// Check if file exists
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		log.Printf("File not found: %s", fullPath)
+		s.sendError(c, 70, "Media file not found")
+		return
+	}
+
+	// Record the download
+	_, err = s.db.Exec(`
+		INSERT INTO downloads (user_id, song_id, ip_address)
+		VALUES ($1, $2, $3)
+	`, userID, id, c.ClientIP())
+
+	if err != nil {
+		log.Printf("Error recording download: %v", err)
+		// Continue with download even if recording fails
+	}
+
+	// Determine content type based on format
+	mimeType := "audio/mpeg"
+	switch strings.ToLower(contentType) {
+	case "mp3":
+		mimeType = "audio/mpeg"
+	case "flac":
+		mimeType = "audio/flac"
+	case "ogg":
+		mimeType = "audio/ogg"
+	case "m4a", "aac":
+		mimeType = "audio/mp4"
+	case "wav":
+		mimeType = "audio/wav"
+	case "opus":
+		mimeType = "audio/opus"
+	}
+
+	// Set headers for download
+	c.Header("Content-Type", mimeType)
+	c.Header("Content-Length", strconv.FormatInt(fileSize, 10))
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.%s\"", fileName, contentType))
+
+	// Serve the file
+	c.File(fullPath)
+
+	log.Printf("User %s downloaded song ID %s (%d/%d downloads today)",
+		c.GetString("username"), id, downloadCount+1, maxDownloads)
 }

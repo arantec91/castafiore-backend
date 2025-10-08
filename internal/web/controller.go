@@ -225,6 +225,58 @@ func (w *WebController) AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// AuthMiddleware with debug logging
+func (w *WebController) AuthMiddlewareDebug() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.Printf("Debug Auth: Processing request for %s", c.Request.URL.Path)
+
+		// Obtener token de cookie
+		token, err := c.Cookie("auth_token")
+		if err != nil {
+			log.Printf("Debug Auth: No auth token found: %v", err)
+			c.Redirect(http.StatusFound, "/login")
+			c.Abort()
+			return
+		}
+
+		// Validar token
+		claims, err := w.auth.ValidateJWT(token)
+		if err != nil {
+			log.Printf("Debug Auth: Invalid JWT: %v", err)
+			c.SetCookie("auth_token", "", -1, "/", "", false, true)
+			c.Redirect(http.StatusFound, "/login")
+			c.Abort()
+			return
+		}
+
+		// Verificar que el usuario sea admin
+		var isAdmin bool
+		err = w.db.QueryRow("SELECT is_admin FROM users WHERE id = $1", claims.UserID).Scan(&isAdmin)
+		if err != nil {
+			log.Printf("Debug Auth: Database error checking admin status: %v", err)
+			c.SetCookie("auth_token", "", -1, "/", "", false, true)
+			c.Redirect(http.StatusFound, "/login")
+			c.Abort()
+			return
+		}
+
+		if !isAdmin {
+			log.Printf("Debug Auth: User %s (ID: %d) is not admin", claims.Username, claims.UserID)
+			c.SetCookie("auth_token", "", -1, "/", "", false, true)
+			c.Redirect(http.StatusFound, "/login")
+			c.Abort()
+			return
+		}
+
+		log.Printf("Debug Auth: User %s (ID: %d) authenticated successfully", claims.Username, claims.UserID)
+
+		// Agregar información del usuario al contexto
+		c.Set("user_id", claims.UserID)
+		c.Set("username", claims.Username)
+		c.Next()
+	}
+}
+
 // Dashboard principal
 func (w *WebController) Dashboard(c *gin.Context) {
 	data := w.getDashboardData()
@@ -275,11 +327,11 @@ func (w *WebController) CreateUser(c *gin.Context) {
 
 	// Insert user
 	query := `
-		INSERT INTO users (username, email, password_hash, subscription_plan, max_concurrent_streams, max_downloads_per_day, is_admin, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO users (username, email, password_hash, subsonic_password, subscription_plan, max_concurrent_streams, max_downloads_per_day, is_admin, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
-	_, err = w.db.Exec(query, username, email, hashedPassword, subscriptionPlan, maxStreams, maxDownloads, isAdmin, true)
+	_, err = w.db.Exec(query, username, email, hashedPassword, password, subscriptionPlan, maxStreams, maxDownloads, isAdmin, true)
 	if err != nil {
 		w.renderPage(c, "Crear Usuario", "create_user", gin.H{
 			"error": "Error al crear el usuario: " + err.Error(),
@@ -1425,4 +1477,224 @@ func (wc *WebController) quickFileCount(musicPath string) int {
 	}
 
 	return count
+}
+
+// User management functions
+
+// EditUserForm displays the user edit form
+func (w *WebController) EditUserForm(c *gin.Context) {
+	userID := c.Param("id")
+	log.Printf("DEBUG: EditUserForm called for user ID: %s", userID)
+
+	user, err := w.getUserByID(userID)
+	if err != nil {
+		log.Printf("DEBUG: Error getting user by ID %s: %v", userID, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Usuario no encontrado"})
+		return
+	}
+
+	log.Printf("DEBUG: User found: %s, rendering edit form", user.Username)
+	w.renderPage(c, "Editar Usuario", "edit_user", gin.H{
+		"user": user,
+	})
+}
+
+// EditUser processes user edit form submission
+func (w *WebController) EditUser(c *gin.Context) {
+	userID := c.Param("id")
+
+	// Check if user exists
+	existingUser, err := w.getUserByID(userID)
+	if err != nil {
+		w.renderPage(c, "Editar Usuario", "edit_user", gin.H{
+			"error": "Usuario no encontrado",
+		})
+		return
+	}
+
+	// Get current user from session for security validations
+	currentUsername, exists := c.Get("username")
+	if !exists {
+		c.Redirect(http.StatusFound, "/login")
+		return
+	}
+
+	username := c.PostForm("username")
+	email := c.PostForm("email")
+	password := c.PostForm("password")
+	subscriptionPlan := c.PostForm("subscription_plan")
+	maxStreams := c.PostForm("max_concurrent_streams")
+	maxDownloads := c.PostForm("max_downloads_per_day")
+	isAdmin := c.PostForm("is_admin") == "on"
+	isActive := c.PostForm("is_active") == "on"
+
+	if username == "" || email == "" {
+		w.renderPage(c, "Editar Usuario", "edit_user", gin.H{
+			"error": "El nombre de usuario y email son obligatorios",
+			"user":  existingUser,
+		})
+		return
+	}
+
+	// Prevent deactivating or removing admin privileges from last admin
+	if existingUser.IsAdmin && (!isAdmin || !isActive) {
+		adminCount, err := w.getAdminCount()
+		if err == nil && adminCount <= 1 {
+			w.renderPage(c, "Editar Usuario", "edit_user", gin.H{
+				"error": "No se puede desactivar o remover privilegios del último administrador",
+				"user":  existingUser,
+			})
+			return
+		}
+	}
+
+	// Prevent current user from deactivating themselves
+	if existingUser.Username == currentUsername && !isActive {
+		w.renderPage(c, "Editar Usuario", "edit_user", gin.H{
+			"error": "No puedes desactivar tu propia cuenta",
+			"user":  existingUser,
+		})
+		return
+	}
+
+	// Convert strings to integers
+	maxStreamsInt, err := strconv.Atoi(maxStreams)
+	if err != nil {
+		maxStreamsInt = 1
+	}
+
+	maxDownloadsInt, err := strconv.Atoi(maxDownloads)
+	if err != nil {
+		maxDownloadsInt = 10
+	}
+
+	// Prepare update query
+	var query string
+	var args []interface{}
+
+	if password != "" {
+		// Include password update
+		hashedPassword, err := auth.HashPassword(password)
+		if err != nil {
+			w.renderPage(c, "Editar Usuario", "edit_user", gin.H{
+				"error": "Error al procesar la contraseña",
+				"user":  existingUser,
+			})
+			return
+		}
+
+		query = `
+			UPDATE users 
+			SET username = $1, email = $2, password_hash = $3, subsonic_password = $4, subscription_plan = $5, 
+			    max_concurrent_streams = $6, max_downloads_per_day = $7, is_admin = $8, is_active = $9
+			WHERE id = $10
+		`
+		args = []interface{}{username, email, hashedPassword, password, subscriptionPlan,
+			maxStreamsInt, maxDownloadsInt, isAdmin, isActive, userID}
+	} else {
+		// No password change
+		query = `
+			UPDATE users 
+			SET username = $1, email = $2, subscription_plan = $3, 
+			    max_concurrent_streams = $4, max_downloads_per_day = $5, is_admin = $6, is_active = $7
+			WHERE id = $8
+		`
+		args = []interface{}{username, email, subscriptionPlan,
+			maxStreamsInt, maxDownloadsInt, isAdmin, isActive, userID}
+	}
+
+	_, err = w.db.Exec(query, args...)
+	if err != nil {
+		w.renderPage(c, "Editar Usuario", "edit_user", gin.H{
+			"error": "Error al actualizar el usuario: " + err.Error(),
+			"user":  existingUser,
+		})
+		return
+	}
+
+	c.Redirect(http.StatusFound, "/admin/users")
+}
+
+// DeleteUser handles user deletion
+func (w *WebController) DeleteUser(c *gin.Context) {
+	userID := c.Param("id")
+	log.Printf("DEBUG: DeleteUser called for user ID: %s", userID)
+
+	// Check if user exists
+	userToDelete, err := w.getUserByID(userID)
+	if err != nil {
+		log.Printf("DEBUG: Error getting user to delete ID %s: %v", userID, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Usuario no encontrado"})
+		return
+	}
+
+	log.Printf("DEBUG: User to delete found: %s", userToDelete.Username)
+
+	// Get current user from session
+	currentUsername, exists := c.Get("username")
+	if !exists {
+		c.Redirect(http.StatusFound, "/login")
+		return
+	}
+
+	// Prevent self-deletion
+	if userToDelete.Username == currentUsername {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No puedes eliminar tu propia cuenta"})
+		return
+	}
+
+	// Prevent deleting last admin
+	if userToDelete.IsAdmin {
+		adminCount, err := w.getAdminCount()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al verificar administradores"})
+			return
+		}
+
+		if adminCount <= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No se puede eliminar el último administrador"})
+			return
+		}
+	}
+
+	// Delete user
+	_, err = w.db.Exec("DELETE FROM users WHERE id = $1", userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al eliminar el usuario"})
+		return
+	}
+
+	c.Redirect(http.StatusFound, "/admin/users")
+}
+
+// Helper function to get user by ID
+func (w *WebController) getUserByID(userID string) (User, error) {
+	var user User
+
+	query := `
+		SELECT id, username, email, subscription_plan, max_concurrent_streams, 
+		       max_downloads_per_day, is_admin, is_active, created_at
+		FROM users 
+		WHERE id = $1
+	`
+
+	err := w.db.QueryRow(query, userID).Scan(
+		&user.ID, &user.Username, &user.Email, &user.SubscriptionPlan,
+		&user.MaxConcurrentStreams, &user.MaxDownloadsPerDay,
+		&user.IsAdmin, &user.IsActive, &user.CreatedAt,
+	)
+
+	return user, err
+}
+
+// Helper function to count admin users
+func (w *WebController) getAdminCount() (int, error) {
+	var count int
+	err := w.db.QueryRow("SELECT COUNT(*) FROM users WHERE is_admin = true").Scan(&count)
+	return count, err
+}
+
+// GetAllUsersForTest returns all users for testing purposes
+func (w *WebController) GetAllUsersForTest() []User {
+	return w.getAllUsers()
 }
